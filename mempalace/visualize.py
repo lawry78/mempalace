@@ -215,6 +215,8 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
 .search-bar input::placeholder {{ color: #555; }}
 .search-info {{ font-size: 12px; color: #888; min-width: 120px; text-align: right; }}
 .search-info em {{ color: #a78bfa; font-style: normal; }}
+#export-btn {{ background: #2a2a4a; color: #a78bfa; border: 1px solid #3a3a5a; border-radius: 6px; padding: 8px 16px; font-size: 13px; cursor: pointer; white-space: nowrap; font-family: inherit; transition: all 0.15s; }}
+#export-btn:hover {{ background: #3a3a5a; border-color: #a78bfa; }}
 .search-help {{ font-size: 11px; color: #555; padding: 2px 0 6px; }}
 .search-help code {{ background: #1e1e30; padding: 1px 5px; border-radius: 3px; color: #888; }}
 .graph-split {{ display: flex; gap: 0; }}
@@ -269,6 +271,7 @@ tr:hover td {{ background: #16162a; }}
   <div class="search-bar">
     <input type="text" id="search-input" placeholder="Search drawers... e.g. JWT AND cookie NOT expired" />
     <div class="search-info" id="search-info"></div>
+    <button id="export-btn" onclick="exportMarkdown()" title="Export current view to Markdown">Export .md</button>
   </div>
   <div class="search-help">Syntax: <code>word</code> <code>"exact phrase"</code> <code>AND</code> <code>OR</code> <code>NOT</code> <code>(group)</code> <code>wing:name</code> <code>hall:name</code></div>
   <div class="graph-split">
@@ -761,7 +764,59 @@ searchInput.addEventListener('input', () => {{
 }});
 
 // Override draw to fade non-matching nodes
-const _origDraw = draw;
+// ── Markdown Export ──────────────────────────────────────────────
+
+function exportMarkdown() {{
+  const query = searchInput.value.trim();
+  const ast = query ? parse(tokenize(query)) : null;
+
+  // Collect matching drawers grouped by wing/room
+  const grouped = {{}};
+  let totalCount = 0;
+  Object.entries(ROOM_DRAWERS).forEach(([room, drawers]) => {{
+    const matches = ast ? drawers.filter(d => evaluate(ast, d)) : drawers;
+    matches.forEach(d => {{
+      const key = d.wing + '/' + room;
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(d);
+      totalCount++;
+    }});
+  }});
+
+  // Build markdown
+  const slug = query ? query.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 60) : 'palace_export';
+  const now = new Date().toISOString().slice(0, 16).replace('T', ' ');
+  let md = `# ${{query ? 'Search: ' + query : 'Palace Export'}}\n\n`;
+  md += `*Generated ${{now}} by MemPalace*\n`;
+  md += `*${{totalCount}} drawers${{query ? ' matching "' + query + '"' : ''}}*\n\n`;
+
+  if (totalCount === 0) {{
+    md += `No drawers found${{query ? ' for "' + query + '"' : ''}}.\n`;
+  }} else {{
+    const sortedKeys = Object.keys(grouped).sort();
+    sortedKeys.forEach(key => {{
+      md += `## ${{key}}\n\n`;
+      grouped[key].forEach(d => {{
+        const meta = [d.source, d.date, d.hall].filter(Boolean).join(' — ');
+        md += `### ${{meta}}\n\n`;
+        md += d.full + '\n\n';
+      }});
+    }});
+  }}
+
+  md += `---\n*End of ${{query ? 'search: ' + query : 'palace export'}}*\n`;
+
+  // Download
+  const blob = new Blob([md], {{type: 'text/markdown'}});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = slug + '.md';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}}
 
 // ── Table ────────────────────────────────────────────────────────
 const tableContainer = document.getElementById('table-container');
