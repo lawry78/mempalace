@@ -68,7 +68,7 @@ def collect_data(palace_path=None, kg_db_path=None):
             "date": (meta.get("date") or meta.get("filed_at", ""))[:10],
             "wing": w,
             "hall": meta.get("hall", ""),
-            "preview": doc[:150].replace("\n", " ") + ("..." if len(doc) > 150 else ""),
+            "preview": doc[:80].replace("\n", " ") + ("..." if len(doc) > 80 else ""),
             "full": doc,
         })
     data["room_drawers"] = room_drawers
@@ -216,13 +216,18 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
 .detail-panel .dp-empty {{ color: #555; text-align: center; padding: 40px 16px; font-size: 13px; }}
 .detail-panel h3 {{ color: #a78bfa; font-size: 15px; margin-bottom: 4px; }}
 .detail-panel .dp-sub {{ font-size: 11px; color: #666; margin-bottom: 12px; }}
-.drawer-item {{ background: #16162a; border-radius: 6px; margin-bottom: 8px; cursor: pointer; overflow: hidden; border: 1px solid #1e1e30; transition: border-color 0.15s; }}
+.drawer-item {{ background: #16162a; border-radius: 6px; margin-bottom: 8px; cursor: pointer; overflow: hidden; border: 1px solid #1e1e30; transition: all 0.15s; }}
 .drawer-item:hover {{ border-color: #3a3a5a; }}
+.drawer-item.expanded {{ background: #1a1a34; border-color: #4a4a6a; }}
 .drawer-header {{ padding: 10px 12px; display: flex; justify-content: space-between; align-items: center; }}
-.drawer-source {{ font-size: 13px; color: #ccc; }}
-.drawer-meta {{ font-size: 11px; color: #666; }}
-.drawer-preview {{ padding: 0 12px 10px; font-size: 12px; color: #888; line-height: 1.5; }}
-.drawer-full {{ display: none; padding: 0 12px 12px; font-size: 12px; color: #bbb; line-height: 1.6; white-space: pre-wrap; border-top: 1px solid #1e1e30; padding-top: 10px; }}
+.drawer-source {{ font-size: 13px; color: #ccc; display: flex; align-items: center; gap: 6px; }}
+.drawer-arrow {{ font-size: 10px; color: #666; transition: transform 0.2s; }}
+.drawer-item.expanded .drawer-arrow {{ transform: rotate(90deg); color: #a78bfa; }}
+.drawer-meta {{ font-size: 11px; color: #666; display: flex; align-items: center; gap: 6px; }}
+.drawer-preview {{ padding: 0 12px 10px; font-size: 12px; color: #888; line-height: 1.5; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+.drawer-full {{ display: none; padding: 12px; font-size: 12px; color: #ccc; line-height: 1.7; white-space: pre-wrap; background: #12122a; border-top: 1px solid #2a2a4a; }}
+.drawer-full-meta {{ display: flex; gap: 12px; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid #1e1e30; font-size: 11px; color: #888; }}
+.drawer-full-meta span {{ color: #aaa; }}
 .drawer-item.expanded .drawer-full {{ display: block; }}
 .drawer-item.expanded .drawer-preview {{ display: none; }}
 .drawer-hall {{ display: inline-block; background: #2a2a4a; border-radius: 3px; padding: 1px 6px; font-size: 10px; color: #a78bfa; }}
@@ -554,10 +559,11 @@ function showRoomDetail(node) {{
   let html = `<h3>${{node.label}}</h3><div class="dp-sub">${{drawers.length}} drawers &middot; ${{node.wings.join(', ')}}</div>`;
   drawers.forEach((d, i) => {{
     const hallBadge = d.hall ? `<span class="drawer-hall">${{d.hall}}</span>` : '';
+    const escaped = d.full.replace(/</g,'&lt;').replace(/>/g,'&gt;');
     html += `<div class="drawer-item" onclick="this.classList.toggle('expanded')">`;
-    html += `<div class="drawer-header"><span class="drawer-source">${{d.source}}</span><span class="drawer-meta">${{d.date}} ${{hallBadge}}</span></div>`;
+    html += `<div class="drawer-header"><span class="drawer-source"><span class="drawer-arrow">&#9654;</span> ${{d.source}}</span><span class="drawer-meta">${{d.date}} ${{hallBadge}}</span></div>`;
     html += `<div class="drawer-preview">${{d.preview}}</div>`;
-    html += `<div class="drawer-full">${{d.full.replace(/</g,'&lt;').replace(/>/g,'&gt;')}}</div>`;
+    html += `<div class="drawer-full"><div class="drawer-full-meta"><span>Wing: ${{d.wing}}</span><span>Hall: ${{d.hall || 'n/a'}}</span><span>Date: ${{d.date || 'n/a'}}</span><span>Source: ${{d.source}}</span></div>${{escaped}}</div>`;
     html += `</div>`;
   }});
   detailPanel.innerHTML = html;
