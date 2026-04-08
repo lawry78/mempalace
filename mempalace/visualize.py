@@ -22,7 +22,7 @@ import chromadb
 from chromadb.errors import InvalidCollectionException
 
 from .config import MempalaceConfig, DEFAULT_COLLECTION_NAME
-from .collection_utils import iter_all_metadata
+from .collection_utils import iter_all_metadata, fetch_all
 from .palace_graph import build_graph
 from .knowledge_graph import KnowledgeGraph
 
@@ -52,13 +52,26 @@ def collect_data(palace_path=None, kg_db_path=None):
 
     data["total_drawers"] = col.count()
 
-    # Wing/room counts
-    for m in iter_all_metadata(col):
-        w = m.get("wing", "unknown")
-        r = m.get("room", "unknown")
+    # Wing/room counts + drawer details per room
+    all_result = fetch_all(col, include=["documents", "metadatas"])
+    room_drawers = {}  # room_name → [{source, date, wing, preview, full}]
+    for doc, meta in zip(all_result["documents"], all_result["metadatas"]):
+        w = meta.get("wing", "unknown")
+        r = meta.get("room", "unknown")
         data["wings"][w] = data["wings"].get(w, 0) + 1
         key = f"{w}/{r}"
         data["rooms"][key] = data["rooms"].get(key, 0) + 1
+        if r not in room_drawers:
+            room_drawers[r] = []
+        room_drawers[r].append({
+            "source": meta.get("source_file", "?"),
+            "date": (meta.get("date") or meta.get("filed_at", ""))[:10],
+            "wing": w,
+            "hall": meta.get("hall", ""),
+            "preview": doc[:150].replace("\n", " ") + ("..." if len(doc) > 150 else ""),
+            "full": doc,
+        })
+    data["room_drawers"] = room_drawers
 
     # Graph
     nodes, edges = build_graph(col=col)
@@ -196,6 +209,23 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
 .legend {{ display: flex; gap: 12px; flex-wrap: wrap; padding: 8px 0; }}
 .legend-item {{ display: flex; align-items: center; gap: 6px; font-size: 12px; color: #888; }}
 .legend-dot {{ width: 10px; height: 10px; border-radius: 50%; }}
+.graph-split {{ display: flex; gap: 0; }}
+.graph-left {{ flex: 2; position: relative; }}
+.graph-right {{ flex: 1; background: #0f0f18; border-left: 1px solid #1e1e30; overflow-y: auto; max-height: 480px; }}
+.detail-panel {{ padding: 16px; }}
+.detail-panel .dp-empty {{ color: #555; text-align: center; padding: 40px 16px; font-size: 13px; }}
+.detail-panel h3 {{ color: #a78bfa; font-size: 15px; margin-bottom: 4px; }}
+.detail-panel .dp-sub {{ font-size: 11px; color: #666; margin-bottom: 12px; }}
+.drawer-item {{ background: #16162a; border-radius: 6px; margin-bottom: 8px; cursor: pointer; overflow: hidden; border: 1px solid #1e1e30; transition: border-color 0.15s; }}
+.drawer-item:hover {{ border-color: #3a3a5a; }}
+.drawer-header {{ padding: 10px 12px; display: flex; justify-content: space-between; align-items: center; }}
+.drawer-source {{ font-size: 13px; color: #ccc; }}
+.drawer-meta {{ font-size: 11px; color: #666; }}
+.drawer-preview {{ padding: 0 12px 10px; font-size: 12px; color: #888; line-height: 1.5; }}
+.drawer-full {{ display: none; padding: 0 12px 12px; font-size: 12px; color: #bbb; line-height: 1.6; white-space: pre-wrap; border-top: 1px solid #1e1e30; padding-top: 10px; }}
+.drawer-item.expanded .drawer-full {{ display: block; }}
+.drawer-item.expanded .drawer-preview {{ display: none; }}
+.drawer-hall {{ display: inline-block; background: #2a2a4a; border-radius: 3px; padding: 1px 6px; font-size: 10px; color: #a78bfa; }}
 .table-section {{ padding: 16px 32px 32px; }}
 .table-section h2 {{ font-size: 16px; color: #a78bfa; margin-bottom: 12px; }}
 table {{ width: 100%; border-collapse: collapse; }}
@@ -218,9 +248,18 @@ tr:hover td {{ background: #16162a; }}
 <div class="graph-section">
   <h2>Palace Graph</h2>
   <div class="legend" id="legend"></div>
-  <div id="graph-container">
-    <canvas id="graph"></canvas>
-    <div id="tooltip"></div>
+  <div class="graph-split">
+    <div class="graph-left">
+      <div id="graph-container">
+        <canvas id="graph"></canvas>
+        <div id="tooltip"></div>
+      </div>
+    </div>
+    <div class="graph-right">
+      <div class="detail-panel" id="detail-panel">
+        <div class="dp-empty">Click a room node to see its drawers</div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -393,13 +432,21 @@ function draw() {{
   }});
   // Nodes
   nodes.forEach(n => {{
+    const isSelected = selectedNode && selectedNode.id === n.id;
     ctx.beginPath();
-    ctx.arc(n.x, n.y, n.r, 0, Math.PI*2);
-    ctx.fillStyle = n.color + '33';
+    ctx.arc(n.x, n.y, isSelected ? n.r + 3 : n.r, 0, Math.PI*2);
+    ctx.fillStyle = isSelected ? n.color + '55' : n.color + '33';
     ctx.fill();
     ctx.strokeStyle = n.color;
-    ctx.lineWidth = 2;
+    ctx.lineWidth = isSelected ? 3 : 2;
     ctx.stroke();
+    if (isSelected) {{
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, n.r + 7, 0, Math.PI*2);
+      ctx.strokeStyle = n.color + '44';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }}
     // Label
     if (n.r > 10) {{
       ctx.fillStyle = '#ccc';
@@ -463,9 +510,12 @@ canvas.addEventListener('mousemove', e => {{
 
 // Drag nodes
 let dragNode = null;
+// Drag + click detection
+let dragStartX = 0, dragStartY = 0, didDrag = false;
 canvas.addEventListener('mousedown', e => {{
   const rect = canvas.getBoundingClientRect();
   const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  dragStartX = mx; dragStartY = my; didDrag = false;
   for (const n of nodes) {{
     const dx = mx - n.x, dy = my - n.y;
     if (dx*dx + dy*dy < n.r*n.r) {{ dragNode = n; break; }}
@@ -474,11 +524,46 @@ canvas.addEventListener('mousedown', e => {{
 canvas.addEventListener('mousemove', e => {{
   if (!dragNode) return;
   const rect = canvas.getBoundingClientRect();
-  dragNode.x = e.clientX - rect.left;
-  dragNode.y = e.clientY - rect.top;
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  if (Math.abs(mx - dragStartX) > 3 || Math.abs(my - dragStartY) > 3) didDrag = true;
+  dragNode.x = mx;
+  dragNode.y = my;
   dragNode.vx = 0; dragNode.vy = 0;
 }});
-canvas.addEventListener('mouseup', () => {{ dragNode = null; }});
+canvas.addEventListener('mouseup', e => {{
+  if (dragNode && !didDrag) {{
+    showRoomDetail(dragNode);
+  }}
+  dragNode = null;
+}});
+
+// ── Detail Panel ─────────────────────────────────────────────────
+const detailPanel = document.getElementById('detail-panel');
+const ROOM_DRAWERS = DATA.room_drawers || {{}};
+let selectedNode = null;
+
+function showRoomDetail(node) {{
+  selectedNode = node;
+  const drawers = ROOM_DRAWERS[node.id] || [];
+  if (drawers.length === 0) {{
+    detailPanel.innerHTML = `<h3>${{node.label}}</h3><div class="dp-sub">${{node.wings.join(', ')}}</div><div class="dp-empty">No drawer content available</div>`;
+    return;
+  }}
+
+  let html = `<h3>${{node.label}}</h3><div class="dp-sub">${{drawers.length}} drawers &middot; ${{node.wings.join(', ')}}</div>`;
+  drawers.forEach((d, i) => {{
+    const hallBadge = d.hall ? `<span class="drawer-hall">${{d.hall}}</span>` : '';
+    html += `<div class="drawer-item" onclick="this.classList.toggle('expanded')">`;
+    html += `<div class="drawer-header"><span class="drawer-source">${{d.source}}</span><span class="drawer-meta">${{d.date}} ${{hallBadge}}</span></div>`;
+    html += `<div class="drawer-preview">${{d.preview}}</div>`;
+    html += `<div class="drawer-full">${{d.full.replace(/</g,'&lt;').replace(/>/g,'&gt;')}}</div>`;
+    html += `</div>`;
+  }});
+  detailPanel.innerHTML = html;
+}}
+
+// Highlight selected node in draw()
+const origDraw = draw;
 
 // ── Table ────────────────────────────────────────────────────────
 const tableContainer = document.getElementById('table-container');
