@@ -142,3 +142,59 @@ class TestHTMLContent:
         # No external CSS/JS references
         assert "http://" not in html
         assert "https://" not in html
+
+
+class TestSearchFeature:
+    def test_search_input_present(self, palace_path, seeded_collection):
+        from mempalace.visualize import generate_visualization
+
+        html = generate_visualization(palace_path=palace_path)["html"]
+        assert 'id="search-input"' in html
+
+    def test_search_syntax_help_present(self, palace_path, seeded_collection):
+        from mempalace.visualize import generate_visualization
+
+        html = generate_visualization(palace_path=palace_path)["html"]
+        assert "AND" in html
+        assert "OR" in html
+        assert "NOT" in html
+        assert "wing:" in html
+        assert "hall:" in html
+
+    def test_tokenizer_present(self, palace_path, seeded_collection):
+        from mempalace.visualize import generate_visualization
+
+        html = generate_visualization(palace_path=palace_path)["html"]
+        assert "function tokenize" in html
+
+    def test_parser_present(self, palace_path, seeded_collection):
+        from mempalace.visualize import generate_visualization
+
+        html = generate_visualization(palace_path=palace_path)["html"]
+        assert "function parse" in html
+
+    def test_evaluator_present(self, palace_path, seeded_collection):
+        from mempalace.visualize import generate_visualization
+
+        html = generate_visualization(palace_path=palace_path)["html"]
+        assert "function evaluate" in html
+
+    def test_room_drawers_in_data(self, palace_path, seeded_collection):
+        from mempalace.visualize import generate_visualization
+
+        result = generate_visualization(palace_path=palace_path)
+        data = result["data"]
+        assert "room_drawers" in data
+        assert len(data["room_drawers"]) > 0
+
+    def test_drawer_full_text_embedded(self, palace_path, seeded_collection):
+        from mempalace.visualize import generate_visualization
+
+        result = generate_visualization(palace_path=palace_path)
+        data = result["data"]
+        # At least one room should have drawers with full text
+        for room, drawers in data["room_drawers"].items():
+            for d in drawers:
+                assert "full" in d
+                assert len(d["full"]) > 0
+                return  # one check is enough

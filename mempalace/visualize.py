@@ -209,6 +209,14 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
 .legend {{ display: flex; gap: 12px; flex-wrap: wrap; padding: 8px 0; }}
 .legend-item {{ display: flex; align-items: center; gap: 6px; font-size: 12px; color: #888; }}
 .legend-dot {{ width: 10px; height: 10px; border-radius: 50%; }}
+.search-bar {{ display: flex; gap: 10px; align-items: center; padding: 10px 0; }}
+.search-bar input {{ flex: 1; background: #16162a; border: 1px solid #2a2a3a; border-radius: 6px; padding: 10px 14px; color: #e0e0e0; font-size: 14px; outline: none; font-family: inherit; }}
+.search-bar input:focus {{ border-color: #a78bfa; box-shadow: 0 0 0 2px rgba(167,139,250,0.15); }}
+.search-bar input::placeholder {{ color: #555; }}
+.search-info {{ font-size: 12px; color: #888; min-width: 120px; text-align: right; }}
+.search-info em {{ color: #a78bfa; font-style: normal; }}
+.search-help {{ font-size: 11px; color: #555; padding: 2px 0 6px; }}
+.search-help code {{ background: #1e1e30; padding: 1px 5px; border-radius: 3px; color: #888; }}
 .graph-split {{ display: flex; gap: 0; }}
 .graph-left {{ flex: 2; position: relative; }}
 .graph-right {{ flex: 1; background: #0f0f18; border-left: 1px solid #1e1e30; overflow-y: auto; max-height: 480px; }}
@@ -253,6 +261,11 @@ tr:hover td {{ background: #16162a; }}
 <div class="graph-section">
   <h2>Palace Graph</h2>
   <div class="legend" id="legend"></div>
+  <div class="search-bar">
+    <input type="text" id="search-input" placeholder="Search drawers... e.g. JWT AND cookie NOT expired" />
+    <div class="search-info" id="search-info"></div>
+  </div>
+  <div class="search-help">Syntax: <code>word</code> <code>"exact phrase"</code> <code>AND</code> <code>OR</code> <code>NOT</code> <code>(group)</code> <code>wing:name</code> <code>hall:name</code></div>
   <div class="graph-split">
     <div class="graph-left">
       <div id="graph-container">
@@ -440,6 +453,10 @@ function draw() {{
   // Nodes
   nodes.forEach(n => {{
     const isSelected = selectedNode && selectedNode.id === n.id;
+    const isFiltered = matchingRooms !== null;
+    const isMatch = !isFiltered || matchingRooms.has(n.id);
+    const alpha = isMatch ? 1.0 : 0.15;
+    ctx.globalAlpha = alpha;
     ctx.beginPath();
     ctx.arc(n.x, n.y, isSelected ? n.r + 3 : n.r, 0, Math.PI*2);
     ctx.fillStyle = isSelected ? n.color + '55' : n.color + '33';
@@ -461,6 +478,7 @@ function draw() {{
       ctx.textAlign = 'center';
       ctx.fillText(n.label, n.x, n.y + n.r + 14);
     }}
+    ctx.globalAlpha = 1.0;
   }});
 }}
 
@@ -569,8 +587,174 @@ function showRoomDetail(node) {{
   detailPanel.innerHTML = html;
 }}
 
-// Highlight selected node in draw()
-const origDraw = draw;
+// ── Search Engine ────────────────────────────────────────────────
+
+// Tokenizer: splits query into tokens
+function tokenize(query) {{
+  const tokens = [];
+  let i = 0;
+  while (i < query.length) {{
+    if (query[i] === ' ') {{ i++; continue; }}
+    if (query[i] === '(') {{ tokens.push({{type:'LPAREN'}}); i++; continue; }}
+    if (query[i] === ')') {{ tokens.push({{type:'RPAREN'}}); i++; continue; }}
+    if (query[i] === '"') {{
+      const end = query.indexOf('"', i+1);
+      if (end === -1) {{ tokens.push({{type:'WORD', value: query.slice(i+1).toLowerCase()}}); i = query.length; }}
+      else {{ tokens.push({{type:'PHRASE', value: query.slice(i+1, end).toLowerCase()}}); i = end+1; }}
+      continue;
+    }}
+    // Read a word
+    let j = i;
+    while (j < query.length && query[j] !== ' ' && query[j] !== '(' && query[j] !== ')') j++;
+    const word = query.slice(i, j);
+    if (word.toUpperCase() === 'AND') tokens.push({{type:'AND'}});
+    else if (word.toUpperCase() === 'OR') tokens.push({{type:'OR'}});
+    else if (word.toUpperCase() === 'NOT') tokens.push({{type:'NOT'}});
+    else if (word.startsWith('wing:')) tokens.push({{type:'WING', value: word.slice(5).toLowerCase()}});
+    else if (word.startsWith('hall:')) tokens.push({{type:'HALL', value: word.slice(5).toLowerCase()}});
+    else tokens.push({{type:'WORD', value: word.toLowerCase()}});
+    i = j;
+  }}
+  return tokens;
+}}
+
+// Recursive descent parser → AST
+function parse(tokens) {{
+  let pos = 0;
+  function peek() {{ return pos < tokens.length ? tokens[pos] : null; }}
+  function next() {{ return tokens[pos++]; }}
+
+  function parseOr() {{
+    let left = parseAnd();
+    while (peek() && peek().type === 'OR') {{ next(); left = {{op:'OR', left, right: parseAnd()}}; }}
+    return left;
+  }}
+  function parseAnd() {{
+    let left = parseNot();
+    while (peek() && (peek().type === 'AND' || (peek().type !== 'OR' && peek().type !== 'RPAREN' && peek().type !== 'NOT'))) {{
+      if (peek().type === 'AND') next(); // consume explicit AND
+      left = {{op:'AND', left, right: parseNot()}};
+    }}
+    return left;
+  }}
+  function parseNot() {{
+    if (peek() && peek().type === 'NOT') {{ next(); return {{op:'NOT', child: parseAtom()}}; }}
+    return parseAtom();
+  }}
+  function parseAtom() {{
+    const t = peek();
+    if (!t) return {{op:'WORD', value:''}};
+    if (t.type === 'LPAREN') {{ next(); const expr = parseOr(); if (peek() && peek().type === 'RPAREN') next(); return expr; }}
+    if (t.type === 'WORD') {{ next(); return {{op:'WORD', value: t.value}}; }}
+    if (t.type === 'PHRASE') {{ next(); return {{op:'PHRASE', value: t.value}}; }}
+    if (t.type === 'WING') {{ next(); return {{op:'WING', value: t.value}}; }}
+    if (t.type === 'HALL') {{ next(); return {{op:'HALL', value: t.value}}; }}
+    next(); return {{op:'WORD', value:''}};
+  }}
+
+  const ast = parseOr();
+  return ast;
+}}
+
+// Evaluate AST against a drawer
+function evaluate(ast, drawer) {{
+  const text = (drawer.full || drawer.preview || '').toLowerCase();
+  const wing = (drawer.wing || '').toLowerCase();
+  const hall = (drawer.hall || '').toLowerCase();
+  const source = (drawer.source || '').toLowerCase();
+  const all = text + ' ' + wing + ' ' + hall + ' ' + source;
+
+  switch(ast.op) {{
+    case 'AND': return evaluate(ast.left, drawer) && evaluate(ast.right, drawer);
+    case 'OR': return evaluate(ast.left, drawer) || evaluate(ast.right, drawer);
+    case 'NOT': return !evaluate(ast.child, drawer);
+    case 'WORD': return all.includes(ast.value);
+    case 'PHRASE': return all.includes(ast.value);
+    case 'WING': return wing.includes(ast.value);
+    case 'HALL': return hall.includes(ast.value);
+    default: return true;
+  }}
+}}
+
+// Search state
+let matchingRooms = null; // null = no filter, Set = filtered rooms
+const searchInput = document.getElementById('search-input');
+const searchInfo = document.getElementById('search-info');
+
+function runSearch() {{
+  const query = searchInput.value.trim();
+  if (!query) {{
+    matchingRooms = null;
+    searchInfo.innerHTML = '';
+    draw();
+    return;
+  }}
+  const tokens = tokenize(query);
+  const ast = parse(tokens);
+  matchingRooms = new Set();
+  let totalHits = 0;
+
+  Object.entries(ROOM_DRAWERS).forEach(([room, drawers]) => {{
+    const hits = drawers.filter(d => evaluate(ast, d));
+    if (hits.length > 0) {{
+      matchingRooms.add(room);
+      totalHits += hits.length;
+    }}
+  }});
+
+  searchInfo.innerHTML = `<em>${{totalHits}}</em> drawers in <em>${{matchingRooms.size}}</em> rooms`;
+
+  // If a room is selected, refresh detail panel with filtered results
+  if (selectedNode) {{
+    showRoomDetailFiltered(selectedNode, ast);
+  }}
+  draw();
+}}
+
+function showRoomDetailFiltered(node, ast) {{
+  const drawers = ROOM_DRAWERS[node.id] || [];
+  const filtered = ast ? drawers.filter(d => evaluate(ast, d)) : drawers;
+
+  if (filtered.length === 0) {{
+    detailPanel.innerHTML = `<h3>${{node.label}}</h3><div class="dp-sub">${{node.wings.join(', ')}}</div><div class="dp-empty">No matching drawers</div>`;
+    return;
+  }}
+
+  let html = `<h3>${{node.label}}</h3><div class="dp-sub">${{filtered.length}} matching drawers &middot; ${{node.wings.join(', ')}}</div>`;
+  filtered.forEach((d) => {{
+    const hallBadge = d.hall ? `<span class="drawer-hall">${{d.hall}}</span>` : '';
+    const escaped = d.full.replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    html += `<div class="drawer-item" onclick="this.classList.toggle('expanded')">`;
+    html += `<div class="drawer-header"><span class="drawer-source"><span class="drawer-arrow">&#9654;</span> ${{d.source}}</span><span class="drawer-meta">${{d.date}} ${{hallBadge}}</span></div>`;
+    html += `<div class="drawer-preview">${{d.preview}}</div>`;
+    html += `<div class="drawer-full"><div class="drawer-full-meta"><span>Wing: ${{d.wing}}</span><span>Hall: ${{d.hall || 'n/a'}}</span><span>Date: ${{d.date || 'n/a'}}</span><span>Source: ${{d.source}}</span></div>${{escaped}}</div>`;
+    html += `</div>`;
+  }});
+  detailPanel.innerHTML = html;
+}}
+
+// Override showRoomDetail to respect active search
+const _origShowRoomDetail = showRoomDetail;
+showRoomDetail = function(node) {{
+  selectedNode = node;
+  const query = searchInput.value.trim();
+  if (query) {{
+    const ast = parse(tokenize(query));
+    showRoomDetailFiltered(node, ast);
+  }} else {{
+    _origShowRoomDetail(node);
+  }}
+}};
+
+// Debounced search
+let searchTimer = null;
+searchInput.addEventListener('input', () => {{
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(runSearch, 200);
+}});
+
+// Override draw to fade non-matching nodes
+const _origDraw = draw;
 
 // ── Table ────────────────────────────────────────────────────────
 const tableContainer = document.getElementById('table-container');
