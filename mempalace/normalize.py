@@ -29,7 +29,7 @@ def normalize(filepath: str) -> str:
         with open(filepath, "r", encoding="utf-8", errors="replace") as f:
             content = f.read()
     except OSError as e:
-        raise IOError(f"Could not read {filepath}: {e}")
+        raise OSError(f"Could not read {filepath}: {e}") from e
 
     if not content.strip():
         return content

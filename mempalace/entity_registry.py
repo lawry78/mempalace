@@ -253,7 +253,7 @@ def _wikipedia_lookup(word: str) -> dict:
                 "note": "not found in Wikipedia — likely a proper noun or unusual name",
             }
         return {"inferred_type": "unknown", "confidence": 0.0, "wiki_summary": None}
-    except (urllib.error.URLError, OSError, json.JSONDecodeError, KeyError):
+    except (urllib.error.URLError, OSError, json.JSONDecodeError, KeyError, TimeoutError):
         return {"inferred_type": "unknown", "confidence": 0.0, "wiki_summary": None}
 
 

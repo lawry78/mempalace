@@ -278,9 +278,13 @@ def _generate_aaak_bootstrap(
     for p in people:
         name = p["name"]
         code = name[:3].upper()
-        # Handle collisions
-        while code in entity_codes.values():
-            code = name[:4].upper()
+        # Handle collisions by progressively using more letters
+        length = 4
+        while code in entity_codes.values() and length <= len(name):
+            code = name[:length].upper()
+            length += 1
+        if code in entity_codes.values():
+            code = f"{name[:3].upper()}_{len(entity_codes)}"
         entity_codes[name] = code
 
     # AAAK entity registry

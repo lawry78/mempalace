@@ -92,13 +92,14 @@ class Layer1:
     def __init__(self, palace_path: str = None, wing: str = None):
         cfg = MempalaceConfig()
         self.palace_path = palace_path or cfg.palace_path
+        self.collection_name = cfg.collection_name
         self.wing = wing
 
     def generate(self) -> str:
         """Pull top drawers from ChromaDB and format as compact L1 text."""
         try:
             client = chromadb.PersistentClient(path=self.palace_path)
-            col = client.get_collection("mempalace_drawers")
+            col = client.get_collection(self.collection_name)
         except (InvalidCollectionException, ValueError):
             return "## L1 — No palace found. Run: mempalace mine <dir>"
 
@@ -182,12 +183,13 @@ class Layer2:
     def __init__(self, palace_path: str = None):
         cfg = MempalaceConfig()
         self.palace_path = palace_path or cfg.palace_path
+        self.collection_name = cfg.collection_name
 
     def retrieve(self, wing: str = None, room: str = None, n_results: int = 10) -> str:
         """Retrieve drawers filtered by wing and/or room."""
         try:
             client = chromadb.PersistentClient(path=self.palace_path)
-            col = client.get_collection("mempalace_drawers")
+            col = client.get_collection(self.collection_name)
         except (InvalidCollectionException, ValueError):
             return "No palace found."
 
@@ -246,12 +248,13 @@ class Layer3:
     def __init__(self, palace_path: str = None):
         cfg = MempalaceConfig()
         self.palace_path = palace_path or cfg.palace_path
+        self.collection_name = cfg.collection_name
 
     def search(self, query: str, wing: str = None, room: str = None, n_results: int = 5) -> str:
         """Semantic search, returns compact result text."""
         try:
             client = chromadb.PersistentClient(path=self.palace_path)
-            col = client.get_collection("mempalace_drawers")
+            col = client.get_collection(self.collection_name)
         except (InvalidCollectionException, ValueError):
             return "No palace found."
 
@@ -307,7 +310,7 @@ class Layer3:
         """Return raw dicts instead of formatted text."""
         try:
             client = chromadb.PersistentClient(path=self.palace_path)
-            col = client.get_collection("mempalace_drawers")
+            col = client.get_collection(self.collection_name)
         except (InvalidCollectionException, ValueError):
             return []
 
@@ -369,6 +372,7 @@ class MemoryStack:
     def __init__(self, palace_path: str = None, identity_path: str = None):
         cfg = MempalaceConfig()
         self.palace_path = palace_path or cfg.palace_path
+        self.collection_name = cfg.collection_name
         self.identity_path = identity_path or os.path.expanduser("~/.mempalace/identity.txt")
 
         self.l0 = Layer0(self.identity_path)
@@ -428,7 +432,7 @@ class MemoryStack:
         # Count drawers
         try:
             client = chromadb.PersistentClient(path=self.palace_path)
-            col = client.get_collection("mempalace_drawers")
+            col = client.get_collection(self.collection_name)
             count = col.count()
             result["total_drawers"] = count
         except (InvalidCollectionException, ValueError):

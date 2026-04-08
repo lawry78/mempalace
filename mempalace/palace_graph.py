@@ -15,7 +15,7 @@ Enables queries like:
 No external graph DB needed — built from ChromaDB metadata.
 """
 
-from collections import defaultdict, Counter
+from collections import defaultdict, Counter, deque
 from .config import MempalaceConfig
 from .collection_utils import iter_all_metadata
 
@@ -119,9 +119,9 @@ def traverse(start_room: str, col=None, config=None, max_hops: int = 2):
     ]
 
     # BFS traversal
-    frontier = [(start_room, 0)]
+    frontier = deque([(start_room, 0)])
     while frontier:
-        current_room, depth = frontier.pop(0)
+        current_room, depth = frontier.popleft()
         if depth >= max_hops:
             continue
 

@@ -12,6 +12,8 @@ from pathlib import Path
 import chromadb
 from chromadb.errors import ChromaError, InvalidCollectionException
 
+from .config import DEFAULT_COLLECTION_NAME
+
 logger = logging.getLogger("mempalace_mcp")
 
 
@@ -26,7 +28,7 @@ def search(query: str, palace_path: str, wing: str = None, room: str = None, n_r
     """
     try:
         client = chromadb.PersistentClient(path=palace_path)
-        col = client.get_collection("mempalace_drawers")
+        col = client.get_collection(DEFAULT_COLLECTION_NAME)
     except (InvalidCollectionException, ValueError):
         print(f"\n  No palace found at {palace_path}")
         print("  Run: mempalace init <dir> then mempalace mine <dir>")
@@ -100,7 +102,7 @@ def search_memories(
     """
     try:
         client = chromadb.PersistentClient(path=palace_path)
-        col = client.get_collection("mempalace_drawers")
+        col = client.get_collection(DEFAULT_COLLECTION_NAME)
     except (InvalidCollectionException, ValueError) as e:
         logger.error("No palace found at %s: %s", palace_path, e)
         return {

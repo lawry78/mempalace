@@ -35,6 +35,7 @@ from .config import MempalaceConfig
 
 from chromadb.errors import ChromaError, InvalidCollectionException
 from .collection_utils import fetch_all
+from .config import DEFAULT_COLLECTION_NAME
 
 
 def cmd_init(args):
@@ -177,7 +178,7 @@ def cmd_repair(args):
     # Try to read existing drawers
     try:
         client = chromadb.PersistentClient(path=palace_path)
-        col = client.get_collection("mempalace_drawers")
+        col = client.get_collection(DEFAULT_COLLECTION_NAME)
         total = col.count()
         print(f"  Drawers found: {total}")
     except (InvalidCollectionException, ValueError, ChromaError) as e:
@@ -205,8 +206,8 @@ def cmd_repair(args):
     shutil.copytree(palace_path, backup_path)
 
     print("  Rebuilding collection...")
-    client.delete_collection("mempalace_drawers")
-    new_col = client.create_collection("mempalace_drawers")
+    client.delete_collection(DEFAULT_COLLECTION_NAME)
+    new_col = client.create_collection(DEFAULT_COLLECTION_NAME)
 
     filed = 0
     for i in range(0, len(all_ids), batch_size):
@@ -246,7 +247,7 @@ def cmd_compress(args):
     # Connect to palace
     try:
         client = chromadb.PersistentClient(path=palace_path)
-        col = client.get_collection("mempalace_drawers")
+        col = client.get_collection(DEFAULT_COLLECTION_NAME)
     except (InvalidCollectionException, ValueError):
         print(f"\n  No palace found at {palace_path}")
         print("  Run: mempalace init <dir> then mempalace mine <dir>")

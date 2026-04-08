@@ -19,6 +19,7 @@ import chromadb
 from chromadb.errors import ChromaError, DuplicateIDError, InvalidCollectionException
 
 from .collection_utils import iter_all_metadata
+from .config import DEFAULT_COLLECTION_NAME
 
 READABLE_EXTENSIONS = {
     ".txt",
@@ -400,9 +401,9 @@ def get_collection(palace_path: str):
     os.makedirs(palace_path, exist_ok=True)
     client = chromadb.PersistentClient(path=palace_path)
     try:
-        return client.get_collection("mempalace_drawers")
+        return client.get_collection(DEFAULT_COLLECTION_NAME)
     except InvalidCollectionException:
-        return client.create_collection("mempalace_drawers")
+        return client.create_collection(DEFAULT_COLLECTION_NAME)
 
 
 def file_already_mined(collection, source_file: str) -> bool:
@@ -648,7 +649,7 @@ def status(palace_path: str):
     """Show what's been filed in the palace."""
     try:
         client = chromadb.PersistentClient(path=palace_path)
-        col = client.get_collection("mempalace_drawers")
+        col = client.get_collection(DEFAULT_COLLECTION_NAME)
     except (InvalidCollectionException, ValueError):
         print(f"\n  No palace found at {palace_path}")
         print("  Run: mempalace init <dir> then mempalace mine <dir>")
