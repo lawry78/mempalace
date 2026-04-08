@@ -15,6 +15,7 @@ Usage:
 
 import json
 import os
+import tempfile
 from datetime import datetime
 
 import chromadb
@@ -74,12 +75,73 @@ def collect_data(palace_path=None, kg_db_path=None):
     return data
 
 
-def generate_visualization(palace_path=None, kg_db_path=None, output_path=None):
+def create_demo_palace():
+    """Create a temporary palace with realistic demo data. Returns palace_path."""
+    demo_path = os.path.join(tempfile.mkdtemp(prefix="mempalace_demo_"), "palace")
+    os.makedirs(demo_path, exist_ok=True)
+    client = chromadb.PersistentClient(path=demo_path)
+    col = client.get_or_create_collection(DEFAULT_COLLECTION_NAME)
+
+    drawers = [
+        ("JWT tokens handle session auth. Refresh tokens in HttpOnly cookies. 24h expiry.", "project_mempalace", "backend", "hall_facts", "auth.py"),
+        ("Database migrations via Alembic. PostgreSQL 15 + pgbouncer pooling.", "project_mempalace", "backend", "hall_facts", "db.py"),
+        ("Switched from REST to GraphQL for the dashboard API.", "project_mempalace", "backend", "hall_decisions", "api.py"),
+        ("React frontend with TanStack Query for server state.", "project_mempalace", "frontend", "hall_facts", "App.tsx"),
+        ("Migrated from CRA to Vite. Build time dropped from 45s to 3s.", "project_mempalace", "frontend", "hall_discoveries", "vite.config.ts"),
+        ("ChromaDB stores all drawers with wing/room metadata.", "project_mempalace", "chromadb-setup", "hall_facts", "searcher.py"),
+        ("Palace graph connects rooms across wings via tunnels.", "project_mempalace", "chromadb-setup", "hall_facts", "palace_graph.py"),
+        ("Sprint planning: migrate auth to passkeys by Q3.", "project_mempalace", "planning", "hall_events", "sprint.md"),
+        ("Decided to keep ChromaDB over Pinecone — local-first principle.", "project_mempalace", "planning", "hall_decisions", "adr-003.md"),
+        ("AAAK dialect compresses entities into 3-letter codes.", "project_mempalace", "aaak-dialect", "hall_discoveries", "dialect.py"),
+        ("Alice is the project lead. Started MemPalace in January 2025.", "wing_alice", "identity", "hall_facts", "intro.txt"),
+        ("Alice prefers functional programming. Hates unnecessary abstractions.", "wing_alice", "preferences", "hall_preferences", "notes.txt"),
+        ("Alice debugged the SQLite variable limit bug.", "wing_alice", "backend", "hall_events", "debug-log.txt"),
+        ("Alice presented MemPalace at the local Python meetup.", "wing_alice", "milestones", "hall_events", "journal.txt"),
+        ("Max is 11, loves chess and swimming.", "wing_max", "identity", "hall_facts", "family.txt"),
+        ("Max won the regional chess tournament.", "wing_max", "milestones", "hall_events", "family.txt"),
+        ("Max asked about how AI memory works.", "wing_max", "conversations", "hall_discoveries", "chat.txt"),
+        ("GPU pricing: RTX 4090 vs A100 for local inference.", "wing_hardware", "gpu-pricing", "hall_facts", "research.md"),
+        ("Ordered 2x RTX 4090 for the home lab.", "wing_hardware", "gpu-pricing", "hall_events", "orders.md"),
+        ("M2 Ultra: ChromaDB + MemPalace runs LongMemEval in 4.5 min.", "wing_hardware", "benchmarks", "hall_discoveries", "bench.md"),
+        ("Home server: 64GB RAM, 2TB NVMe. Runs ChromaDB + Ollama 24/7.", "wing_hardware", "homelab", "hall_facts", "setup.md"),
+        ("LongMemEval: 96.6% R@5 in raw mode. Zero API calls.", "wing_ai_research", "benchmarks", "hall_facts", "longmemeval.md"),
+        ("RAG with structured metadata outperforms naive vector search by 34%.", "wing_ai_research", "benchmarks", "hall_discoveries", "rag-study.md"),
+        ("Temporal KG tracks when facts change with valid_from/valid_to.", "wing_ai_research", "knowledge-graphs", "hall_facts", "kg-design.md"),
+        ("Entity detection without LLM: verb patterns + pronoun proximity.", "wing_ai_research", "entity-detection", "hall_discoveries", "detector.md"),
+        ("Alice reviewed benchmark results and confirmed the 96.6% score.", "wing_alice", "benchmarks", "hall_events", "review.txt"),
+        ("Backend auth needs to work with new passkey standard.", "wing_alice", "backend", "hall_facts", "auth-research.txt"),
+        ("KG now tracks Alice, Max, and all project entities.", "wing_ai_research", "knowledge-graphs", "hall_facts", "kg-entities.md"),
+    ]
+
+    dates = [
+        "2025-01-15", "2025-02-01", "2025-03-10", "2025-04-01", "2025-05-15",
+        "2025-06-01", "2025-07-20", "2025-08-10", "2025-09-01", "2025-10-15",
+        "2025-11-01", "2025-12-01", "2026-01-10", "2026-02-01", "2026-03-01",
+    ]
+
+    ids, docs, metas = [], [], []
+    for i, (doc, wing, room, hall, source) in enumerate(drawers):
+        ids.append(f"demo_{wing}_{room}_{i}")
+        docs.append(doc)
+        metas.append({
+            "wing": wing, "room": room, "hall": hall,
+            "source_file": source, "chunk_index": 0, "added_by": "demo",
+            "filed_at": f"{dates[i % len(dates)]}T12:00:00",
+            "date": dates[i % len(dates)],
+        })
+
+    col.add(ids=ids, documents=docs, metadatas=metas)
+    return demo_path
+
+
+def generate_visualization(palace_path=None, kg_db_path=None, output_path=None, demo=False):
     """Generate a self-contained HTML visualization.
 
     Returns:
         dict with "html" string and optionally "output_path".
     """
+    if demo:
+        palace_path = create_demo_palace()
     data = collect_data(palace_path=palace_path, kg_db_path=kg_db_path)
     html = _build_html(data)
 

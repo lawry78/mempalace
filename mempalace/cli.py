@@ -203,7 +203,9 @@ def cmd_visualize(args):
     palace_path = os.path.expanduser(args.palace) if args.palace else MempalaceConfig().palace_path
     output = args.output or "palace_map.html"
 
-    result = generate_visualization(palace_path=palace_path, output_path=output)
+    result = generate_visualization(
+        palace_path=palace_path, output_path=output, demo=args.demo
+    )
     d = result["data"]
     print(f"\n{'=' * 55}")
     print("  MemPalace Visualization")
@@ -513,6 +515,7 @@ def main():
     )
     p_viz.add_argument("--output", default=None, help="Output HTML file (default: palace_map.html)")
     p_viz.add_argument("--no-open", action="store_true", help="Don't open in browser")
+    p_viz.add_argument("--demo", action="store_true", help="Generate with realistic demo data (no real palace needed)")
 
     args = parser.parse_args()
 
