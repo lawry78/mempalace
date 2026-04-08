@@ -159,6 +159,78 @@ class TestReadTools:
         result = tool_status()
         assert "error" in result
 
+    def test_status_no_aaak_in_response(self, monkeypatch, config, palace_path, seeded_collection, kg):
+        _patch_mcp_server(monkeypatch, config, palace_path, kg)
+        from mempalace.mcp_server import tool_status
+
+        result = tool_status()
+        assert "aaak_dialect" not in result
+
+    def test_status_no_recommendations_under_threshold(self, monkeypatch, config, palace_path, seeded_collection, kg):
+        """4 drawers is far below the 500 threshold — no recommendations."""
+        _patch_mcp_server(monkeypatch, config, palace_path, kg)
+        from mempalace.mcp_server import tool_status
+
+        result = tool_status()
+        assert "recommendations" not in result
+
+
+# ── Recommendations ────────────────────────────────────────────────────
+
+
+class TestRecommendations:
+    def _seed_large_wing(self, palace_path, wing, n):
+        import chromadb
+
+        client = chromadb.PersistentClient(path=palace_path)
+        col = client.get_or_create_collection("mempalace_drawers")
+        batch_size = 500
+        for start in range(0, n, batch_size):
+            end = min(start + batch_size, n)
+            ids = [f"rec_{wing}_{i}" for i in range(start, end)]
+            docs = [f"content {i}" for i in range(start, end)]
+            metas = [
+                {"wing": wing, "room": "general", "source_file": "gen.py",
+                 "chunk_index": 0, "added_by": "test", "filed_at": "2026-01-01T00:00:00"}
+                for _ in range(start, end)
+            ]
+            col.add(ids=ids, documents=docs, metadatas=metas)
+        return col
+
+    def test_recommendation_appears_above_threshold(self, monkeypatch, config, palace_path, kg):
+        self._seed_large_wing(palace_path, "big_wing", 600)
+        _patch_mcp_server(monkeypatch, config, palace_path, kg)
+        from mempalace.mcp_server import tool_status
+
+        result = tool_status()
+        assert "recommendations" in result
+        assert len(result["recommendations"]) == 1
+        assert "big_wing" in result["recommendations"][0]
+        assert "compress" in result["recommendations"][0]
+
+    def test_no_recommendation_below_threshold(self, monkeypatch, config, palace_path, kg):
+        self._seed_large_wing(palace_path, "small_wing", 100)
+        _patch_mcp_server(monkeypatch, config, palace_path, kg)
+        from mempalace.mcp_server import tool_status
+
+        result = tool_status()
+        assert "recommendations" not in result
+
+    def test_multiple_recommendations(self, monkeypatch, config, palace_path, kg):
+        self._seed_large_wing(palace_path, "wing_a", 600)
+        self._seed_large_wing(palace_path, "wing_b", 700)
+        self._seed_large_wing(palace_path, "wing_c", 50)  # below threshold
+        _patch_mcp_server(monkeypatch, config, palace_path, kg)
+        from mempalace.mcp_server import tool_status
+
+        result = tool_status()
+        assert "recommendations" in result
+        assert len(result["recommendations"]) == 2
+        rec_text = " ".join(result["recommendations"])
+        assert "wing_a" in rec_text
+        assert "wing_b" in rec_text
+        assert "wing_c" not in rec_text
+
 
 # ── Search Tool ─────────────────────────────────────────────────────────
 
@@ -336,3 +408,89 @@ class TestDiaryTools:
 
         r = tool_diary_read(agent_name="Nobody")
         assert r["entries"] == []
+
+
+# ── Batch Iteration (no 10k cap) ──────────────────────────────────────
+
+
+class TestBatchIteration:
+    """Verify stat tools iterate beyond a single batch (no hardcoded cap)."""
+
+    def _seed_many(self, palace_path, n):
+        """Insert *n* drawers spread across multiple wings and rooms."""
+        import chromadb
+
+        client = chromadb.PersistentClient(path=palace_path)
+        col = client.get_or_create_collection("mempalace_drawers")
+        # ChromaDB add supports batches; insert in chunks of 500
+        batch_size = 500
+        for start in range(0, n, batch_size):
+            end = min(start + batch_size, n)
+            ids = [f"d_{i}" for i in range(start, end)]
+            docs = [f"content {i}" for i in range(start, end)]
+            metas = [
+                {
+                    "wing": f"wing_{i % 3}",
+                    "room": f"room_{i % 5}",
+                    "source_file": "gen.py",
+                    "chunk_index": 0,
+                    "added_by": "test",
+                    "filed_at": "2026-01-01T00:00:00",
+                }
+                for i in range(start, end)
+            ]
+            col.add(ids=ids, documents=docs, metadatas=metas)
+        return col
+
+    def test_status_counts_beyond_batch(self, monkeypatch, config, palace_path, kg):
+        """tool_status must report the true count, not a capped value."""
+        n = 1500  # exceeds _BATCH (1000)
+        self._seed_many(palace_path, n)
+        _patch_mcp_server(monkeypatch, config, palace_path, kg)
+        from mempalace.mcp_server import tool_status
+
+        result = tool_status()
+        counted = sum(result["wings"].values())
+        assert counted == n, f"Expected {n}, got {counted}"
+
+    def test_list_wings_counts_beyond_batch(self, monkeypatch, config, palace_path, kg):
+        n = 1500
+        self._seed_many(palace_path, n)
+        _patch_mcp_server(monkeypatch, config, palace_path, kg)
+        from mempalace.mcp_server import tool_list_wings
+
+        result = tool_list_wings()
+        counted = sum(result["wings"].values())
+        assert counted == n
+
+    def test_list_rooms_counts_beyond_batch(self, monkeypatch, config, palace_path, kg):
+        n = 1500
+        self._seed_many(palace_path, n)
+        _patch_mcp_server(monkeypatch, config, palace_path, kg)
+        from mempalace.mcp_server import tool_list_rooms
+
+        result = tool_list_rooms()
+        counted = sum(result["rooms"].values())
+        assert counted == n
+
+    def test_list_rooms_filtered_beyond_batch(self, monkeypatch, config, palace_path, kg):
+        n = 1500
+        self._seed_many(palace_path, n)
+        _patch_mcp_server(monkeypatch, config, palace_path, kg)
+        from mempalace.mcp_server import tool_list_rooms
+
+        result = tool_list_rooms(wing="wing_0")
+        counted = sum(result["rooms"].values())
+        assert counted == 500  # n=1500, i%3==0 → 500
+
+    def test_taxonomy_counts_beyond_batch(self, monkeypatch, config, palace_path, kg):
+        n = 1500
+        self._seed_many(palace_path, n)
+        _patch_mcp_server(monkeypatch, config, palace_path, kg)
+        from mempalace.mcp_server import tool_get_taxonomy
+
+        result = tool_get_taxonomy()
+        total = sum(
+            count for wing in result["taxonomy"].values() for count in wing.values()
+        )
+        assert total == n

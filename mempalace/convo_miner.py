@@ -16,6 +16,7 @@ from datetime import datetime
 from collections import defaultdict
 
 import chromadb
+from chromadb.errors import ChromaError, DuplicateIDError, InvalidCollectionException
 
 from .normalize import normalize
 
@@ -216,7 +217,7 @@ def get_collection(palace_path: str):
     client = chromadb.PersistentClient(path=palace_path)
     try:
         return client.get_collection("mempalace_drawers")
-    except Exception:
+    except InvalidCollectionException:
         return client.create_collection("mempalace_drawers")
 
 
@@ -224,7 +225,7 @@ def file_already_mined(collection, source_file: str) -> bool:
     try:
         results = collection.get(where={"source_file": source_file}, limit=1)
         return len(results.get("ids", [])) > 0
-    except Exception:
+    except ChromaError:
         return False
 
 
@@ -375,9 +376,8 @@ def mine_convos(
                     ],
                 )
                 drawers_added += 1
-            except Exception as e:
-                if "already exists" not in str(e).lower():
-                    raise
+            except DuplicateIDError:
+                pass
 
         total_drawers += drawers_added
         print(f"  ✓ [{i:4}/{len(files)}] {filepath.name[:50]:50} +{drawers_added}")

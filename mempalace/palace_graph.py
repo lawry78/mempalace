@@ -17,8 +17,10 @@ No external graph DB needed — built from ChromaDB metadata.
 
 from collections import defaultdict, Counter
 from .config import MempalaceConfig
+from .collection_utils import iter_all_metadata
 
 import chromadb
+from chromadb.errors import InvalidCollectionException
 
 
 def _get_collection(config=None):
@@ -26,7 +28,7 @@ def _get_collection(config=None):
     try:
         client = chromadb.PersistentClient(path=config.palace_path)
         return client.get_collection(config.collection_name)
-    except Exception:
+    except (InvalidCollectionException, ValueError):
         return None
 
 
@@ -43,27 +45,20 @@ def build_graph(col=None, config=None):
     if not col:
         return {}, []
 
-    total = col.count()
     room_data = defaultdict(lambda: {"wings": set(), "halls": set(), "count": 0, "dates": set()})
 
-    offset = 0
-    while offset < total:
-        batch = col.get(limit=1000, offset=offset, include=["metadatas"])
-        for meta in batch["metadatas"]:
-            room = meta.get("room", "")
-            wing = meta.get("wing", "")
-            hall = meta.get("hall", "")
-            date = meta.get("date", "")
-            if room and room != "general" and wing:
-                room_data[room]["wings"].add(wing)
-                if hall:
-                    room_data[room]["halls"].add(hall)
-                if date:
-                    room_data[room]["dates"].add(date)
-                room_data[room]["count"] += 1
-        if not batch["ids"]:
-            break
-        offset += len(batch["ids"])
+    for meta in iter_all_metadata(col):
+        room = meta.get("room", "")
+        wing = meta.get("wing", "")
+        hall = meta.get("hall", "")
+        date = meta.get("date", "")
+        if room and room != "general" and wing:
+            room_data[room]["wings"].add(wing)
+            if hall:
+                room_data[room]["halls"].add(hall)
+            if date:
+                room_data[room]["dates"].add(date)
+            room_data[room]["count"] += 1
 
     # Build edges from rooms that span multiple wings
     edges = []

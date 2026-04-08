@@ -28,7 +28,9 @@ from .version import __version__
 from .searcher import search_memories
 from .palace_graph import traverse, find_tunnels, graph_stats
 import chromadb
+from chromadb.errors import ChromaError, InvalidCollectionException
 
+from .collection_utils import iter_all_metadata, fetch_all
 from .knowledge_graph import KnowledgeGraph
 
 _kg = KnowledgeGraph()
@@ -46,7 +48,7 @@ def _get_collection(create=False):
         if create:
             return client.get_or_create_collection(_config.collection_name)
         return client.get_collection(_config.collection_name)
-    except Exception:
+    except (InvalidCollectionException, ValueError):
         return None
 
 
@@ -67,31 +69,47 @@ def tool_status():
     count = col.count()
     wings = {}
     rooms = {}
-    try:
-        all_meta = col.get(include=["metadatas"], limit=10000)["metadatas"]
-        for m in all_meta:
-            w = m.get("wing", "unknown")
-            r = m.get("room", "unknown")
-            wings[w] = wings.get(w, 0) + 1
-            rooms[r] = rooms.get(r, 0) + 1
-    except Exception:
-        pass
-    return {
+    for m in iter_all_metadata(col):
+        w = m.get("wing", "unknown")
+        r = m.get("room", "unknown")
+        wings[w] = wings.get(w, 0) + 1
+        rooms[r] = rooms.get(r, 0) + 1
+    recs = _build_recommendations(wings)
+    result = {
         "total_drawers": count,
         "wings": wings,
         "rooms": rooms,
         "palace_path": _config.palace_path,
         "protocol": PALACE_PROTOCOL,
-        "aaak_dialect": AAAK_SPEC,
     }
+    if recs:
+        result["recommendations"] = recs
+    return result
+
+
+# ── Recommendations ───────────────────────────────────────────────────────────
+
+_COMPRESS_THRESHOLD = 500  # drawers per wing before suggesting compression
+
+
+def _build_recommendations(wings):
+    """Return a list of actionable suggestions based on palace stats."""
+    recs = []
+    for wing, count in sorted(wings.items(), key=lambda x: x[1], reverse=True):
+        if count >= _COMPRESS_THRESHOLD:
+            recs.append(
+                f"Wing '{wing}' has {count} drawers — consider running "
+                f"`mempalace compress --wing {wing}` to reduce context loading tokens. "
+                f"Use `mempalace_get_aaak_spec` to learn the compression format first."
+            )
+    return recs
 
 
 # ── AAAK Dialect Spec ─────────────────────────────────────────────────────────
-# Included in status response so the AI learns it on first wake-up call.
-# Also available via mempalace_get_aaak_spec tool.
+# Available via mempalace_get_aaak_spec tool (opt-in, not auto-loaded).
 
 PALACE_PROTOCOL = """IMPORTANT — MemPalace Memory Protocol:
-1. ON WAKE-UP: Call mempalace_status to load palace overview + AAAK spec.
+1. ON WAKE-UP: Call mempalace_status to load palace overview.
 2. BEFORE RESPONDING about any person, project, or past event: call mempalace_kg_query or mempalace_search FIRST. Never guess — verify.
 3. IF UNSURE about a fact (name, gender, age, relationship): say "let me check" and query the palace. Wrong is worse than slow.
 4. AFTER EACH SESSION: call mempalace_diary_write to record what happened, what you learned, what matters.
@@ -99,8 +117,9 @@ PALACE_PROTOCOL = """IMPORTANT — MemPalace Memory Protocol:
 
 This protocol ensures the AI KNOWS before it speaks. Storage is not memory — but storage + this protocol = memory."""
 
-AAAK_SPEC = """AAAK is a compressed memory dialect that MemPalace uses for efficient storage.
-It is designed to be readable by both humans and LLMs without decoding.
+AAAK_SPEC = """AAAK is an experimental lossy compression dialect for MemPalace.
+It abbreviates repeated entities into short codes to reduce token usage at scale.
+Readable by both humans and LLMs without a decoder. Best suited for large wings (500+ drawers).
 
 FORMAT:
   ENTITIES: 3-letter uppercase codes. ALC=Alice, JOR=Jordan, RIL=Riley, MAX=Max, BEN=Ben.
@@ -124,13 +143,9 @@ def tool_list_wings():
     if not col:
         return _no_palace()
     wings = {}
-    try:
-        all_meta = col.get(include=["metadatas"], limit=10000)["metadatas"]
-        for m in all_meta:
-            w = m.get("wing", "unknown")
-            wings[w] = wings.get(w, 0) + 1
-    except Exception:
-        pass
+    for m in iter_all_metadata(col):
+        w = m.get("wing", "unknown")
+        wings[w] = wings.get(w, 0) + 1
     return {"wings": wings}
 
 
@@ -139,16 +154,10 @@ def tool_list_rooms(wing: str = None):
     if not col:
         return _no_palace()
     rooms = {}
-    try:
-        kwargs = {"include": ["metadatas"], "limit": 10000}
-        if wing:
-            kwargs["where"] = {"wing": wing}
-        all_meta = col.get(**kwargs)["metadatas"]
-        for m in all_meta:
-            r = m.get("room", "unknown")
-            rooms[r] = rooms.get(r, 0) + 1
-    except Exception:
-        pass
+    where = {"wing": wing} if wing else None
+    for m in iter_all_metadata(col, where=where):
+        r = m.get("room", "unknown")
+        rooms[r] = rooms.get(r, 0) + 1
     return {"wing": wing or "all", "rooms": rooms}
 
 
@@ -157,16 +166,12 @@ def tool_get_taxonomy():
     if not col:
         return _no_palace()
     taxonomy = {}
-    try:
-        all_meta = col.get(include=["metadatas"], limit=10000)["metadatas"]
-        for m in all_meta:
-            w = m.get("wing", "unknown")
-            r = m.get("room", "unknown")
-            if w not in taxonomy:
-                taxonomy[w] = {}
-            taxonomy[w][r] = taxonomy[w].get(r, 0) + 1
-    except Exception:
-        pass
+    for m in iter_all_metadata(col):
+        w = m.get("wing", "unknown")
+        r = m.get("room", "unknown")
+        if w not in taxonomy:
+            taxonomy[w] = {}
+        taxonomy[w][r] = taxonomy[w].get(r, 0) + 1
     return {"taxonomy": taxonomy}
 
 
@@ -211,7 +216,7 @@ def tool_check_duplicate(content: str, threshold: float = 0.9):
             "is_duplicate": len(duplicates) > 0,
             "matches": duplicates,
         }
-    except Exception as e:
+    except ChromaError as e:
         return {"error": str(e)}
 
 
@@ -283,7 +288,7 @@ def tool_add_drawer(
         )
         logger.info(f"Filed drawer: {drawer_id} → {wing}/{room}")
         return {"success": True, "drawer_id": drawer_id, "wing": wing, "room": room}
-    except Exception as e:
+    except ChromaError as e:
         return {"success": False, "error": str(e)}
 
 
@@ -299,7 +304,7 @@ def tool_delete_drawer(drawer_id: str):
         col.delete(ids=[drawer_id])
         logger.info(f"Deleted drawer: {drawer_id}")
         return {"success": True, "drawer_id": drawer_id}
-    except Exception as e:
+    except ChromaError as e:
         return {"success": False, "error": str(e)}
 
 
@@ -388,7 +393,7 @@ def tool_diary_write(agent_name: str, entry: str, topic: str = "general"):
             "topic": topic,
             "timestamp": now.isoformat(),
         }
-    except Exception as e:
+    except ChromaError as e:
         return {"success": False, "error": str(e)}
 
 
@@ -403,18 +408,17 @@ def tool_diary_read(agent_name: str, last_n: int = 10):
         return _no_palace()
 
     try:
-        results = col.get(
-            where={"$and": [{"wing": wing}, {"room": "diary"}]},
-            include=["documents", "metadatas"],
-            limit=10000,
-        )
+        where = {"$and": [{"wing": wing}, {"room": "diary"}]}
+        result = fetch_all(col, include=["documents", "metadatas"], where=where)
+        all_docs = result["documents"]
+        all_metas = result["metadatas"]
 
-        if not results["ids"]:
+        if not all_docs:
             return {"agent": agent_name, "entries": [], "message": "No diary entries yet."}
 
         # Combine and sort by timestamp
         entries = []
-        for doc, meta in zip(results["documents"], results["metadatas"]):
+        for doc, meta in zip(all_docs, all_metas):
             entries.append(
                 {
                     "date": meta.get("date", ""),
@@ -430,10 +434,10 @@ def tool_diary_read(agent_name: str, last_n: int = 10):
         return {
             "agent": agent_name,
             "entries": entries,
-            "total": len(results["ids"]),
+            "total": len(all_docs),
             "showing": len(entries),
         }
-    except Exception as e:
+    except ChromaError as e:
         return {"error": str(e)}
 
 
@@ -466,7 +470,7 @@ TOOLS = {
         "handler": tool_get_taxonomy,
     },
     "mempalace_get_aaak_spec": {
-        "description": "Get the AAAK dialect specification — the compressed memory format MemPalace uses. Call this if you need to read or write AAAK-compressed memories.",
+        "description": "Get the AAAK dialect specification — an experimental lossy compression format for large wings. Call this before using `mempalace compress` or writing AAAK-format entries.",
         "input_schema": {"type": "object", "properties": {}},
         "handler": tool_get_aaak_spec,
     },
@@ -647,7 +651,7 @@ TOOLS = {
         "handler": tool_delete_drawer,
     },
     "mempalace_diary_write": {
-        "description": "Write to your personal agent diary in AAAK format. Your observations, thoughts, what you worked on, what matters. Each agent has their own diary with full history. Write in AAAK for compression — e.g. 'SESSION:2026-04-04|built.palace.graph+diary.tools|ALC.req:agent.diaries.in.aaak|★★★'. Use entity codes from the AAAK spec.",
+        "description": "Write to your personal agent diary. Your observations, thoughts, what you worked on, what matters. Each agent has their own diary with full history. Write in plain text for best searchability. AAAK format is optional for large-scale compression — call mempalace_get_aaak_spec first if needed.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -657,7 +661,7 @@ TOOLS = {
                 },
                 "entry": {
                     "type": "string",
-                    "description": "Your diary entry in AAAK format — compressed, entity-coded, emotion-marked",
+                    "description": "Your diary entry — plain text recommended, AAAK optional for compression",
                 },
                 "topic": {
                     "type": "string",
@@ -669,7 +673,7 @@ TOOLS = {
         "handler": tool_diary_write,
     },
     "mempalace_diary_read": {
-        "description": "Read your recent diary entries (in AAAK). See what past versions of yourself recorded — your journal across sessions.",
+        "description": "Read your recent diary entries. See what past versions of yourself recorded — your journal across sessions.",
         "input_schema": {
             "type": "object",
             "properties": {

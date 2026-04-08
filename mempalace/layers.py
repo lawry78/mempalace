@@ -21,9 +21,15 @@ import sys
 from pathlib import Path
 from collections import defaultdict
 
+import logging
+
 import chromadb
+from chromadb.errors import ChromaError, InvalidCollectionException
 
 from .config import MempalaceConfig
+from .collection_utils import fetch_all
+
+logger = logging.getLogger("mempalace.layers")
 
 
 # ---------------------------------------------------------------------------
@@ -93,30 +99,14 @@ class Layer1:
         try:
             client = chromadb.PersistentClient(path=self.palace_path)
             col = client.get_collection("mempalace_drawers")
-        except Exception:
+        except (InvalidCollectionException, ValueError):
             return "## L1 — No palace found. Run: mempalace mine <dir>"
 
         # Fetch all drawers in batches to avoid SQLite variable limit (~999)
-        _BATCH = 500
-        docs, metas = [], []
-        offset = 0
-        while True:
-            kwargs = {"include": ["documents", "metadatas"], "limit": _BATCH, "offset": offset}
-            if self.wing:
-                kwargs["where"] = {"wing": self.wing}
-            try:
-                batch = col.get(**kwargs)
-            except Exception:
-                break
-            batch_docs = batch.get("documents", [])
-            batch_metas = batch.get("metadatas", [])
-            if not batch_docs:
-                break
-            docs.extend(batch_docs)
-            metas.extend(batch_metas)
-            offset += len(batch_docs)
-            if len(batch_docs) < _BATCH:
-                break
+        where = {"wing": self.wing} if self.wing else None
+        result = fetch_all(col, include=["documents", "metadatas"], where=where)
+        docs = result["documents"]
+        metas = result["metadatas"]
 
         if not docs:
             return "## L1 — No memories yet."
@@ -198,7 +188,7 @@ class Layer2:
         try:
             client = chromadb.PersistentClient(path=self.palace_path)
             col = client.get_collection("mempalace_drawers")
-        except Exception:
+        except (InvalidCollectionException, ValueError):
             return "No palace found."
 
         where = {}
@@ -215,7 +205,7 @@ class Layer2:
 
         try:
             results = col.get(**kwargs)
-        except Exception as e:
+        except ChromaError as e:
             return f"Retrieval error: {e}"
 
         docs = results.get("documents", [])
@@ -262,7 +252,7 @@ class Layer3:
         try:
             client = chromadb.PersistentClient(path=self.palace_path)
             col = client.get_collection("mempalace_drawers")
-        except Exception:
+        except (InvalidCollectionException, ValueError):
             return "No palace found."
 
         where = {}
@@ -283,7 +273,7 @@ class Layer3:
 
         try:
             results = col.query(**kwargs)
-        except Exception as e:
+        except ChromaError as e:
             return f"Search error: {e}"
 
         docs = results["documents"][0]
@@ -318,7 +308,7 @@ class Layer3:
         try:
             client = chromadb.PersistentClient(path=self.palace_path)
             col = client.get_collection("mempalace_drawers")
-        except Exception:
+        except (InvalidCollectionException, ValueError):
             return []
 
         where = {}
@@ -339,7 +329,7 @@ class Layer3:
 
         try:
             results = col.query(**kwargs)
-        except Exception:
+        except ChromaError:
             return []
 
         hits = []
@@ -441,7 +431,7 @@ class MemoryStack:
             col = client.get_collection("mempalace_drawers")
             count = col.count()
             result["total_drawers"] = count
-        except Exception:
+        except (InvalidCollectionException, ValueError):
             result["total_drawers"] = 0
 
         return result

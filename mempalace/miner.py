@@ -16,6 +16,9 @@ from datetime import datetime
 from collections import defaultdict
 
 import chromadb
+from chromadb.errors import ChromaError, DuplicateIDError, InvalidCollectionException
+
+from .collection_utils import iter_all_metadata
 
 READABLE_EXTENSIONS = {
     ".txt",
@@ -100,7 +103,7 @@ class GitignoreMatcher:
 
         try:
             lines = gitignore_path.read_text(encoding="utf-8", errors="replace").splitlines()
-        except Exception:
+        except OSError:
             return None
 
         rules = []
@@ -398,7 +401,7 @@ def get_collection(palace_path: str):
     client = chromadb.PersistentClient(path=palace_path)
     try:
         return client.get_collection("mempalace_drawers")
-    except Exception:
+    except InvalidCollectionException:
         return client.create_collection("mempalace_drawers")
 
 
@@ -407,7 +410,7 @@ def file_already_mined(collection, source_file: str) -> bool:
     try:
         results = collection.get(where={"source_file": source_file}, limit=1)
         return len(results.get("ids", [])) > 0
-    except Exception:
+    except ChromaError:
         return False
 
 
@@ -432,10 +435,8 @@ def add_drawer(
             ],
         )
         return True
-    except Exception as e:
-        if "already exists" in str(e).lower() or "duplicate" in str(e).lower():
-            return False
-        raise
+    except DuplicateIDError:
+        return False
 
 
 # =============================================================================
@@ -648,21 +649,20 @@ def status(palace_path: str):
     try:
         client = chromadb.PersistentClient(path=palace_path)
         col = client.get_collection("mempalace_drawers")
-    except Exception:
+    except (InvalidCollectionException, ValueError):
         print(f"\n  No palace found at {palace_path}")
         print("  Run: mempalace init <dir> then mempalace mine <dir>")
         return
 
     # Count by wing and room
-    r = col.get(limit=10000, include=["metadatas"])
-    metas = r["metadatas"]
-
     wing_rooms = defaultdict(lambda: defaultdict(int))
-    for m in metas:
+    count = 0
+    for m in iter_all_metadata(col):
         wing_rooms[m.get("wing", "?")][m.get("room", "?")] += 1
+        count += 1
 
     print(f"\n{'=' * 55}")
-    print(f"  MemPalace Status — {len(metas)} drawers")
+    print(f"  MemPalace Status — {count} drawers")
     print(f"{'=' * 55}\n")
     for wing, rooms in sorted(wing_rooms.items()):
         print(f"  WING: {wing}")

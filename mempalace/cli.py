@@ -33,6 +33,9 @@ from pathlib import Path
 
 from .config import MempalaceConfig
 
+from chromadb.errors import ChromaError, InvalidCollectionException
+from .collection_utils import fetch_all
+
 
 def cmd_init(args):
     import json
@@ -177,7 +180,7 @@ def cmd_repair(args):
         col = client.get_collection("mempalace_drawers")
         total = col.count()
         print(f"  Drawers found: {total}")
-    except Exception as e:
+    except (InvalidCollectionException, ValueError, ChromaError) as e:
         print(f"  Error reading palace: {e}")
         print("  Cannot recover — palace may need to be re-mined from source files.")
         return
@@ -188,17 +191,10 @@ def cmd_repair(args):
 
     # Extract all drawers in batches
     print("\n  Extracting drawers...")
-    batch_size = 5000
-    all_ids = []
-    all_docs = []
-    all_metas = []
-    offset = 0
-    while offset < total:
-        batch = col.get(limit=batch_size, offset=offset, include=["documents", "metadatas"])
-        all_ids.extend(batch["ids"])
-        all_docs.extend(batch["documents"])
-        all_metas.extend(batch["metadatas"])
-        offset += batch_size
+    result = fetch_all(col, include=["documents", "metadatas"])
+    all_ids = result["ids"]
+    all_docs = result["documents"]
+    all_metas = result["metadatas"]
     print(f"  Extracted {len(all_ids)} drawers")
 
     # Backup and rebuild
@@ -251,36 +247,17 @@ def cmd_compress(args):
     try:
         client = chromadb.PersistentClient(path=palace_path)
         col = client.get_collection("mempalace_drawers")
-    except Exception:
+    except (InvalidCollectionException, ValueError):
         print(f"\n  No palace found at {palace_path}")
         print("  Run: mempalace init <dir> then mempalace mine <dir>")
         sys.exit(1)
 
     # Query drawers in batches to avoid SQLite variable limit (~999)
     where = {"wing": args.wing} if args.wing else None
-    _BATCH = 500
-    docs, metas, ids = [], [], []
-    offset = 0
-    while True:
-        try:
-            kwargs = {"include": ["documents", "metadatas"], "limit": _BATCH, "offset": offset}
-            if where:
-                kwargs["where"] = where
-            batch = col.get(**kwargs)
-        except Exception as e:
-            if not docs:
-                print(f"\n  Error reading drawers: {e}")
-                sys.exit(1)
-            break
-        batch_docs = batch.get("documents", [])
-        if not batch_docs:
-            break
-        docs.extend(batch_docs)
-        metas.extend(batch.get("metadatas", []))
-        ids.extend(batch.get("ids", []))
-        offset += len(batch_docs)
-        if len(batch_docs) < _BATCH:
-            break
+    result = fetch_all(col, include=["documents", "metadatas"], where=where)
+    docs = result["documents"]
+    metas = result["metadatas"]
+    ids = result["ids"]
 
     if not docs:
         wing_label = f" in wing '{args.wing}'" if args.wing else ""
@@ -334,7 +311,7 @@ def cmd_compress(args):
             print(
                 f"  Stored {len(compressed_entries)} compressed drawers in 'mempalace_compressed' collection."
             )
-        except Exception as e:
+        except ChromaError as e:
             print(f"  Error storing compressed drawers: {e}")
             sys.exit(1)
 

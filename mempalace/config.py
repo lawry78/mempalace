@@ -5,8 +5,11 @@ Priority: env vars > config file (~/.mempalace/config.json) > defaults
 """
 
 import json
+import logging
 import os
 from pathlib import Path
+
+logger = logging.getLogger("mempalace.config")
 
 DEFAULT_PALACE_PATH = os.path.expanduser("~/.mempalace/palace")
 DEFAULT_COLLECTION_NAME = "mempalace_drawers"
@@ -62,6 +65,19 @@ DEFAULT_HALL_KEYWORDS = {
 }
 
 
+def _validate(value, expected_type, key, default):
+    """Return *value* if it matches *expected_type*, else warn and return *default*."""
+    if isinstance(value, expected_type):
+        return value
+    logger.warning(
+        "Config key '%s' has type %s, expected %s — using default",
+        key,
+        type(value).__name__,
+        expected_type.__name__,
+    )
+    return default
+
+
 class MempalaceConfig:
     """Configuration manager for MemPalace.
 
@@ -85,8 +101,24 @@ class MempalaceConfig:
         if self._config_file.exists():
             try:
                 with open(self._config_file, "r") as f:
-                    self._file_config = json.load(f)
-            except (json.JSONDecodeError, OSError):
+                    data = json.load(f)
+                if not isinstance(data, dict):
+                    logger.warning(
+                        "Config file %s contains %s instead of object — using defaults",
+                        self._config_file,
+                        type(data).__name__,
+                    )
+                    data = {}
+                self._file_config = data
+            except json.JSONDecodeError as e:
+                logger.warning(
+                    "Corrupt config file %s: %s — using defaults", self._config_file, e
+                )
+                self._file_config = {}
+            except OSError as e:
+                logger.warning(
+                    "Cannot read config file %s: %s — using defaults", self._config_file, e
+                )
                 self._file_config = {}
 
     @property
@@ -95,12 +127,14 @@ class MempalaceConfig:
         env_val = os.environ.get("MEMPALACE_PALACE_PATH") or os.environ.get("MEMPAL_PALACE_PATH")
         if env_val:
             return env_val
-        return self._file_config.get("palace_path", DEFAULT_PALACE_PATH)
+        val = self._file_config.get("palace_path", DEFAULT_PALACE_PATH)
+        return _validate(val, str, "palace_path", DEFAULT_PALACE_PATH)
 
     @property
     def collection_name(self):
         """ChromaDB collection name."""
-        return self._file_config.get("collection_name", DEFAULT_COLLECTION_NAME)
+        val = self._file_config.get("collection_name", DEFAULT_COLLECTION_NAME)
+        return _validate(val, str, "collection_name", DEFAULT_COLLECTION_NAME)
 
     @property
     def people_map(self):
@@ -108,20 +142,30 @@ class MempalaceConfig:
         if self._people_map_file.exists():
             try:
                 with open(self._people_map_file, "r") as f:
-                    return json.load(f)
-            except (json.JSONDecodeError, OSError):
-                pass
-        return self._file_config.get("people_map", {})
+                    data = json.load(f)
+                return _validate(data, dict, "people_map", {})
+            except json.JSONDecodeError as e:
+                logger.warning(
+                    "Corrupt people_map %s: %s — using default", self._people_map_file, e
+                )
+            except OSError as e:
+                logger.warning(
+                    "Cannot read people_map %s: %s — using default", self._people_map_file, e
+                )
+        val = self._file_config.get("people_map", {})
+        return _validate(val, dict, "people_map", {})
 
     @property
     def topic_wings(self):
         """List of topic wing names."""
-        return self._file_config.get("topic_wings", DEFAULT_TOPIC_WINGS)
+        val = self._file_config.get("topic_wings", DEFAULT_TOPIC_WINGS)
+        return _validate(val, list, "topic_wings", DEFAULT_TOPIC_WINGS)
 
     @property
     def hall_keywords(self):
         """Mapping of hall names to keyword lists."""
-        return self._file_config.get("hall_keywords", DEFAULT_HALL_KEYWORDS)
+        val = self._file_config.get("hall_keywords", DEFAULT_HALL_KEYWORDS)
+        return _validate(val, dict, "hall_keywords", DEFAULT_HALL_KEYWORDS)
 
     def init(self):
         """Create config directory and write default config.json if it doesn't exist."""

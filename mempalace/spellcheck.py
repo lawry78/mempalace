@@ -124,7 +124,7 @@ def _load_known_names() -> set:
             for alias in entity.get("aliases", []):
                 names.add(alias.lower())
         return names
-    except Exception:
+    except (ImportError, OSError, KeyError, ValueError):
         return set()
 
 
