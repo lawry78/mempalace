@@ -417,6 +417,8 @@ function simulate() {{
   }});
 }}
 
+let selectedNode = null;
+
 function draw() {{
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   // Edges
@@ -540,7 +542,6 @@ canvas.addEventListener('mouseup', e => {{
 // ── Detail Panel ─────────────────────────────────────────────────
 const detailPanel = document.getElementById('detail-panel');
 const ROOM_DRAWERS = DATA.room_drawers || {{}};
-let selectedNode = null;
 
 function showRoomDetail(node) {{
   selectedNode = node;
