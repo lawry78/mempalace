@@ -240,7 +240,12 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
 .drawer-item.expanded .drawer-preview {{ display: none; }}
 .drawer-hall {{ display: inline-block; background: #2a2a4a; border-radius: 3px; padding: 1px 6px; font-size: 10px; color: #a78bfa; }}
 .table-section {{ padding: 16px 32px 32px; }}
-.table-section h2 {{ font-size: 16px; color: #a78bfa; margin-bottom: 12px; }}
+.accordion-header {{ font-size: 16px; color: #a78bfa; cursor: pointer; display: flex; align-items: center; gap: 8px; padding: 8px 0; user-select: none; }}
+.accordion-header:hover {{ color: #c4b5fd; }}
+.accordion-arrow {{ font-size: 12px; transition: transform 0.2s; }}
+.accordion-header.open .accordion-arrow {{ transform: rotate(90deg); }}
+.accordion-body {{ display: none; }}
+.accordion-header.open + .accordion-body {{ display: block; }}
 table {{ width: 100%; border-collapse: collapse; }}
 th {{ text-align: left; padding: 8px 12px; border-bottom: 2px solid #2a2a3a; color: #888; font-size: 12px; font-weight: 600; text-transform: uppercase; }}
 td {{ padding: 8px 12px; border-bottom: 1px solid #1a1a2a; font-size: 13px; }}
@@ -282,8 +287,10 @@ tr:hover td {{ background: #16162a; }}
 </div>
 
 <div class="table-section">
-  <h2>Wing / Room Breakdown</h2>
-  <div id="table-container"></div>
+  <div class="accordion-header" id="table-toggle" onclick="this.classList.toggle('open')">
+    <span class="accordion-arrow">&#9654;</span> Wing / Room Breakdown
+  </div>
+  <div class="accordion-body" id="table-container"></div>
 </div>
 
 <script>
