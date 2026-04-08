@@ -196,6 +196,29 @@ def cmd_deep_dive(args):
     print(f"{'=' * 55}\n")
 
 
+def cmd_visualize(args):
+    import webbrowser
+    from .visualize import generate_visualization
+
+    palace_path = os.path.expanduser(args.palace) if args.palace else MempalaceConfig().palace_path
+    output = args.output or "palace_map.html"
+
+    result = generate_visualization(palace_path=palace_path, output_path=output)
+    d = result["data"]
+    print(f"\n{'=' * 55}")
+    print("  MemPalace Visualization")
+    print(f"{'=' * 55}")
+    print(f"  Drawers:  {d['total_drawers']}")
+    print(f"  Wings:    {len(d['wings'])}")
+    print(f"  Rooms:    {len(d['graph_nodes'])}")
+    print(f"  Tunnels:  {len(d['graph_edges'])}")
+    print(f"\n  Written to: {result['output_path']}")
+    print(f"{'=' * 55}\n")
+
+    if not args.no_open:
+        webbrowser.open(f"file://{os.path.abspath(result['output_path'])}")
+
+
 def cmd_repair(args):
     """Rebuild palace vector index from SQLite metadata."""
     import chromadb
@@ -484,6 +507,13 @@ def main():
     p_dive.add_argument("--output", default=None, help="Output file path (default: deep_dive_<topic>.md)")
     p_dive.add_argument("--limit", type=int, default=100, help="Max semantic search results (default: 100)")
 
+    # visualize
+    p_viz = sub.add_parser(
+        "visualize", help="Generate interactive palace map + dashboard as HTML"
+    )
+    p_viz.add_argument("--output", default=None, help="Output HTML file (default: palace_map.html)")
+    p_viz.add_argument("--no-open", action="store_true", help="Don't open in browser")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -500,6 +530,7 @@ def main():
         "repair": cmd_repair,
         "status": cmd_status,
         "deep-dive": cmd_deep_dive,
+        "visualize": cmd_visualize,
     }
     dispatch[args.command](args)
 
