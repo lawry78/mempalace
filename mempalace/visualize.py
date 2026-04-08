@@ -783,28 +783,29 @@ function exportMarkdown() {{
     }});
   }});
 
-  // Build markdown
+  // Build markdown (NL avoids Python f-string eating backslash-n)
+  const NL = String.fromCharCode(10);
   const slug = query ? query.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 60) : 'palace_export';
   const now = new Date().toISOString().slice(0, 16).replace('T', ' ');
-  let md = `# ${{query ? 'Search: ' + query : 'Palace Export'}}\n\n`;
-  md += `*Generated ${{now}} by MemPalace*\n`;
-  md += `*${{totalCount}} drawers${{query ? ' matching "' + query + '"' : ''}}*\n\n`;
+  let md = '# ' + (query ? 'Search: ' + query : 'Palace Export') + NL + NL;
+  md += '*Generated ' + now + ' by MemPalace*' + NL;
+  md += '*' + totalCount + ' drawers' + (query ? ' matching "' + query + '"' : '') + '*' + NL + NL;
 
   if (totalCount === 0) {{
-    md += `No drawers found${{query ? ' for "' + query + '"' : ''}}.\n`;
+    md += 'No drawers found' + (query ? ' for "' + query + '"' : '') + '.' + NL;
   }} else {{
     const sortedKeys = Object.keys(grouped).sort();
     sortedKeys.forEach(key => {{
-      md += `## ${{key}}\n\n`;
+      md += '## ' + key + NL + NL;
       grouped[key].forEach(d => {{
         const meta = [d.source, d.date, d.hall].filter(Boolean).join(' — ');
-        md += `### ${{meta}}\n\n`;
-        md += d.full + '\n\n';
+        md += '### ' + meta + NL + NL;
+        md += d.full + NL + NL;
       }});
     }});
   }}
 
-  md += `---\n*End of ${{query ? 'search: ' + query : 'palace export'}}*\n`;
+  md += '---' + NL + '*End of ' + (query ? 'search: ' + query : 'palace export') + '*' + NL;
 
   // Download
   const blob = new Blob([md], {{type: 'text/markdown'}});
