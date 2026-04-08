@@ -436,6 +436,7 @@ function simulate() {{
 }}
 
 let selectedNode = null;
+let matchingRooms = null; // null = no filter, Set = filtered rooms
 
 function draw() {{
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -677,7 +678,6 @@ function evaluate(ast, drawer) {{
 }}
 
 // Search state
-let matchingRooms = null; // null = no filter, Set = filtered rooms
 const searchInput = document.getElementById('search-input');
 const searchInfo = document.getElementById('search-info');
 
