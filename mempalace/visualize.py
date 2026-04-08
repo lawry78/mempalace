@@ -181,9 +181,18 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
 .graph-section h2 {{ font-size: 16px; color: #a78bfa; margin-bottom: 12px; }}
 #graph-container {{ width: 100%; height: 480px; background: #0c0c14; border-radius: 8px; border: 1px solid #1e1e30; position: relative; cursor: grab; }}
 #graph-container:active {{ cursor: grabbing; }}
-#tooltip {{ position: absolute; display: none; background: #1e1e30; border: 1px solid #3a3a5a; border-radius: 6px; padding: 10px 14px; font-size: 13px; pointer-events: none; z-index: 10; max-width: 280px; }}
-#tooltip .tt-title {{ font-weight: 600; color: #a78bfa; margin-bottom: 4px; }}
-#tooltip .tt-row {{ color: #aaa; }}
+#tooltip {{ position: absolute; display: none; background: #1a1a2e; border: 1px solid #3a3a5a; border-radius: 10px; padding: 0; font-size: 13px; pointer-events: none; z-index: 10; min-width: 260px; max-width: 380px; box-shadow: 0 8px 32px rgba(0,0,0,0.5); overflow: hidden; }}
+#tooltip .tt-header {{ background: #252540; padding: 12px 16px; border-bottom: 1px solid #3a3a5a; }}
+#tooltip .tt-title {{ font-weight: 700; font-size: 15px; color: #a78bfa; }}
+#tooltip .tt-subtitle {{ font-size: 11px; color: #666; margin-top: 2px; }}
+#tooltip .tt-body {{ padding: 12px 16px; }}
+#tooltip .tt-table {{ width: 100%; border-collapse: collapse; }}
+#tooltip .tt-table td {{ padding: 5px 0; vertical-align: top; }}
+#tooltip .tt-table td:first-child {{ color: #666; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; width: 70px; padding-right: 12px; }}
+#tooltip .tt-table td:last-child {{ color: #ccc; }}
+#tooltip .tt-badge {{ display: inline-block; background: #2a2a4a; border-radius: 4px; padding: 2px 8px; margin: 1px 2px; font-size: 11px; color: #a78bfa; }}
+#tooltip .tt-bar-bg {{ height: 6px; background: #2a2a3a; border-radius: 3px; margin-top: 8px; }}
+#tooltip .tt-bar {{ height: 6px; border-radius: 3px; background: #a78bfa; }}
 .legend {{ display: flex; gap: 12px; flex-wrap: wrap; padding: 8px 0; }}
 .legend-item {{ display: flex; align-items: center; gap: 6px; font-size: 12px; color: #888; }}
 .legend-dot {{ width: 10px; height: 10px; border-radius: 50%; }}
@@ -282,6 +291,7 @@ Object.entries(DATA.graph_nodes).forEach(([room, info]) => {{
     wings: wings,
     count: info.count,
     halls: info.halls || [],
+    dates: info.dates || [],
     color: wings.length > 0 ? wingColor[wings[0]] || '#666' : '#666',
     r: r,
     x: canvas.width/2 + (Math.random()-0.5)*300,
@@ -426,12 +436,26 @@ canvas.addEventListener('mousemove', e => {{
   }}
   if (hit) {{
     tooltip.style.display = 'block';
-    tooltip.style.left = (hit.x + hit.r + 10) + 'px';
-    tooltip.style.top = (hit.y - 10) + 'px';
-    tooltip.innerHTML = `<div class="tt-title">${{hit.label}}</div>`
-      + `<div class="tt-row">${{hit.count}} drawers</div>`
-      + `<div class="tt-row">Wings: ${{hit.wings.join(', ')}}</div>`
-      + (hit.halls.length ? `<div class="tt-row">Halls: ${{hit.halls.join(', ')}}</div>` : '');
+    // Position tooltip — keep within canvas bounds
+    let tx = hit.x + hit.r + 14;
+    let ty = hit.y - 20;
+    if (tx + 300 > canvas.width) tx = hit.x - hit.r - 290;
+    if (ty < 10) ty = 10;
+    tooltip.style.left = tx + 'px';
+    tooltip.style.top = ty + 'px';
+
+    const maxCount = Math.max(...nodes.map(n => n.count));
+    const barPct = Math.round((hit.count / maxCount) * 100);
+    const wingBadges = hit.wings.map(w => `<span class="tt-badge" style="border-left:3px solid ${{wingColor[w] || '#666'}}">${{w}}</span>`).join(' ');
+    const hallBadges = hit.halls.length ? hit.halls.map(h => `<span class="tt-badge">${{h}}</span>`).join(' ') : '<span style="color:#555">none</span>';
+    const lastDate = hit.dates.length ? hit.dates[hit.dates.length - 1] : 'n/a';
+
+    tooltip.innerHTML = `<div class="tt-header"><div class="tt-title">${{hit.label}}</div><div class="tt-subtitle">${{hit.count}} drawers &middot; last: ${{lastDate}}</div></div>`
+      + `<div class="tt-body"><table class="tt-table">`
+      + `<tr><td>Wings</td><td>${{wingBadges}}</td></tr>`
+      + `<tr><td>Halls</td><td>${{hallBadges}}</td></tr>`
+      + `<tr><td>Size</td><td>${{hit.count}} / ${{maxCount}} drawers<div class="tt-bar-bg"><div class="tt-bar" style="width:${{barPct}}%;background:${{hit.color}}"></div></div></td></tr>`
+      + `</table></div>`;
   }} else {{
     tooltip.style.display = 'none';
   }}
