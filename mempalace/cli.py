@@ -159,6 +159,50 @@ def cmd_status(args):
     status(palace_path=palace_path)
 
 
+def cmd_doctor(args):
+    from .doctor import diagnose
+
+    palace_path = os.path.expanduser(args.palace) if args.palace else MempalaceConfig().palace_path
+    report = diagnose(palace_path=palace_path, wing=args.wing)
+
+    if "error" in report:
+        print(f"\n  Error: {report['error']}")
+        return
+
+    s = report["summary"]
+    healthy = report["healthy"]
+    print(f"\n{'=' * 55}")
+    print("  MemPalace Doctor")
+    print(f"{'=' * 55}")
+    print(f"  Drawers scanned:  {s['total_drawers']}")
+    print(f"  Issues found:     {s['total_issues']}")
+    if s["total_issues"] > 0:
+        print(f"    Critical:       {s['critical']}")
+        print(f"    Warning:        {s['warning']}")
+        print(f"    Info:           {s['info']}")
+    print()
+
+    if healthy:
+        print("  Palace is healthy! No issues found.")
+    else:
+        for check in report["checks"]:
+            issues = check.get("issues", [])
+            if not issues:
+                continue
+            print(f"  [{check['check'].upper()}] {check['description']} ({len(issues)})")
+            for issue in issues:
+                sev = issue["severity"]
+                icon = {"critical": "!!", "warning": "!", "info": "-"}[sev]
+                print(f"    [{icon}] {issue['message']}")
+                if args.verbose:
+                    for k, v in issue.items():
+                        if k not in ("message", "severity"):
+                            print(f"        {k}: {v}")
+            print()
+
+    print(f"{'=' * 55}\n")
+
+
 def cmd_deep_dive(args):
     from .deep_dive import deep_dive
 
@@ -500,6 +544,13 @@ def main():
     # status
     sub.add_parser("status", help="Show what's been filed")
 
+    # doctor
+    p_doctor = sub.add_parser(
+        "doctor", help="Health check — find conflicts, duplicates, orphans, stale facts"
+    )
+    p_doctor.add_argument("--wing", default=None, help="Limit checks to one wing")
+    p_doctor.add_argument("--verbose", action="store_true", help="Show all issue details")
+
     # deep-dive
     p_dive = sub.add_parser(
         "deep-dive", help="Export everything the palace knows about a topic to a .md file"
@@ -532,6 +583,7 @@ def main():
         "wake-up": cmd_wakeup,
         "repair": cmd_repair,
         "status": cmd_status,
+        "doctor": cmd_doctor,
         "deep-dive": cmd_deep_dive,
         "visualize": cmd_visualize,
     }

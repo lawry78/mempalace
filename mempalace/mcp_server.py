@@ -32,6 +32,7 @@ from chromadb.errors import ChromaError, InvalidCollectionException
 
 from .collection_utils import iter_all_metadata, fetch_all
 from .deep_dive import deep_dive
+from .doctor import diagnose as doctor_diagnose, merge_drawers
 from .knowledge_graph import KnowledgeGraph
 
 _kg = KnowledgeGraph()
@@ -234,6 +235,16 @@ def tool_deep_dive(topic: str, wing: str = None, max_results: int = 100):
         wing=wing,
         max_semantic=max_results,
     )
+
+
+def tool_doctor(wing: str = None):
+    """Run palace health check — find conflicts, duplicates, orphans, stale facts."""
+    return doctor_diagnose(palace_path=_config.palace_path, wing=wing)
+
+
+def tool_merge_drawers(keep_id: str, remove_id: str):
+    """Merge duplicate drawers — keep one, remove the other."""
+    return merge_drawers(_config.palace_path, keep_id, remove_id)
 
 
 def tool_traverse_graph(start_room: str, max_hops: int = 2):
@@ -500,6 +511,28 @@ TOOLS = {
             "required": ["topic"],
         },
         "handler": tool_deep_dive,
+    },
+    "mempalace_doctor": {
+        "description": "Palace health check — finds conflicts, duplicates, orphan drawers, stale KG facts, and tiny rooms. Returns a structured report with severity levels (critical/warning/info).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "wing": {"type": "string", "description": "Optional wing filter to limit scope"},
+            },
+        },
+        "handler": tool_doctor,
+    },
+    "mempalace_merge_drawers": {
+        "description": "Smart merge — remove a duplicate drawer, keeping the better one. Use after mempalace_doctor identifies duplicates.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "keep_id": {"type": "string", "description": "ID of the drawer to keep"},
+                "remove_id": {"type": "string", "description": "ID of the duplicate drawer to remove"},
+            },
+            "required": ["keep_id", "remove_id"],
+        },
+        "handler": tool_merge_drawers,
     },
     "mempalace_kg_query": {
         "description": "Query the knowledge graph for an entity's relationships. Returns typed facts with temporal validity. E.g. 'Max' → child_of Alice, loves chess, does swimming. Filter by date with as_of to see what was true at a point in time.",
