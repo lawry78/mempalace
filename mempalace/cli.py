@@ -159,6 +159,43 @@ def cmd_status(args):
     status(palace_path=palace_path)
 
 
+def cmd_deep_dive(args):
+    from .deep_dive import deep_dive
+
+    palace_path = os.path.expanduser(args.palace) if args.palace else MempalaceConfig().palace_path
+    output = args.output
+    if not output:
+        slug = args.topic.lower().replace(" ", "_")[:40]
+        output = f"deep_dive_{slug}.md"
+
+    result = deep_dive(
+        topic=args.topic,
+        palace_path=palace_path,
+        wing=args.wing,
+        output_path=output,
+        max_semantic=args.limit,
+    )
+
+    if "error" in result:
+        print(f"\n  Error: {result['error']}")
+        if "hint" in result:
+            print(f"  {result['hint']}")
+        return
+
+    s = result["stats"]
+    print(f"\n{'=' * 55}")
+    print(f"  Deep Dive: {s['topic']}")
+    print(f"{'=' * 55}")
+    print(f"  Drawers found:    {s['total_drawers']}")
+    print(f"    Semantic:       {s['semantic_hits']}")
+    print(f"    Room match:     {s['room_match_hits']}")
+    print(f"  KG facts:         {s['kg_facts']}")
+    print(f"  Wings:            {', '.join(s['wings']) or '(none)'}")
+    print(f"  Rooms:            {', '.join(s['rooms']) or '(none)'}")
+    print(f"\n  Written to: {result['output_path']}")
+    print(f"{'=' * 55}\n")
+
+
 def cmd_repair(args):
     """Rebuild palace vector index from SQLite metadata."""
     import chromadb
@@ -438,6 +475,15 @@ def main():
     # status
     sub.add_parser("status", help="Show what's been filed")
 
+    # deep-dive
+    p_dive = sub.add_parser(
+        "deep-dive", help="Export everything the palace knows about a topic to a .md file"
+    )
+    p_dive.add_argument("topic", help="Topic to deep-dive into")
+    p_dive.add_argument("--wing", default=None, help="Limit to one wing")
+    p_dive.add_argument("--output", default=None, help="Output file path (default: deep_dive_<topic>.md)")
+    p_dive.add_argument("--limit", type=int, default=100, help="Max semantic search results (default: 100)")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -453,6 +499,7 @@ def main():
         "wake-up": cmd_wakeup,
         "repair": cmd_repair,
         "status": cmd_status,
+        "deep-dive": cmd_deep_dive,
     }
     dispatch[args.command](args)
 

@@ -31,6 +31,7 @@ import chromadb
 from chromadb.errors import ChromaError, InvalidCollectionException
 
 from .collection_utils import iter_all_metadata, fetch_all
+from .deep_dive import deep_dive
 from .knowledge_graph import KnowledgeGraph
 
 _kg = KnowledgeGraph()
@@ -223,6 +224,16 @@ def tool_check_duplicate(content: str, threshold: float = 0.9):
 def tool_get_aaak_spec():
     """Return the AAAK dialect specification."""
     return {"aaak_spec": AAAK_SPEC}
+
+
+def tool_deep_dive(topic: str, wing: str = None, max_results: int = 100):
+    """Exhaustive topic export — collects everything the palace knows."""
+    return deep_dive(
+        topic=topic,
+        palace_path=_config.palace_path,
+        wing=wing,
+        max_semantic=max_results,
+    )
 
 
 def tool_traverse_graph(start_room: str, max_hops: int = 2):
@@ -473,6 +484,22 @@ TOOLS = {
         "description": "Get the AAAK dialect specification — an experimental lossy compression format for large wings. Call this before using `mempalace compress` or writing AAAK-format entries.",
         "input_schema": {"type": "object", "properties": {}},
         "handler": tool_get_aaak_spec,
+    },
+    "mempalace_deep_dive": {
+        "description": "Exhaustive topic export — collects EVERYTHING the palace knows about a topic using semantic search, room matching, and knowledge graph. Returns structured markdown with all relevant drawers and KG facts grouped by wing/room.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "topic": {"type": "string", "description": "Topic to deep-dive into"},
+                "wing": {"type": "string", "description": "Optional wing filter to narrow scope"},
+                "max_results": {
+                    "type": "integer",
+                    "description": "Max semantic search results (default: 100)",
+                },
+            },
+            "required": ["topic"],
+        },
+        "handler": tool_deep_dive,
     },
     "mempalace_kg_query": {
         "description": "Query the knowledge graph for an entity's relationships. Returns typed facts with temporal validity. E.g. 'Max' → child_of Alice, loves chess, does swimming. Filter by date with as_of to see what was true at a point in time.",
