@@ -454,7 +454,7 @@ canvas.addEventListener('mousemove', e => {{
       + `<div class="tt-body"><table class="tt-table">`
       + `<tr><td>Wings</td><td>${{wingBadges}}</td></tr>`
       + `<tr><td>Halls</td><td>${{hallBadges}}</td></tr>`
-      + `<tr><td>Size</td><td>${{hit.count}} / ${{maxCount}} drawers<div class="tt-bar-bg"><div class="tt-bar" style="width:${{barPct}}%;background:${{hit.color}}"></div></div></td></tr>`
+      + `<tr><td>Size</td><td>${{hit.count}} drawers<div class="tt-bar-bg"><div class="tt-bar" style="width:${{barPct}}%;background:${{hit.color}}"></div></div></td></tr>`
       + `</table></div>`;
   }} else {{
     tooltip.style.display = 'none';
